@@ -256,7 +256,63 @@ export interface FormatOptions {
    */
   chapterSpaceBefore: number | null;
   chapterSpaceAfter: number | null;
+  /** Details used to build the title and copyright pages. */
+  bookDetails: BookDetails;
+  /** Which extra sections to add around the book. */
+  extraSections: ExtraSections;
+  /**
+   * Drop the front matter already in the manuscript and use the generated
+   * pages instead, rather than ending up with two title pages.
+   */
+  replaceFrontMatter: boolean;
 }
+
+/** What the author tells us about the book, for its opening pages. */
+export interface BookDetails {
+  title: string;
+  subtitle: string;
+  author: string;
+  copyrightYear: string;
+  publisher: string;
+  isbn: string;
+  dedication: string;
+  acknowledgments: string;
+  aboutTheAuthor: string;
+  bibliography: string;
+}
+
+export interface ExtraSections {
+  titlePage: boolean;
+  copyrightPage: boolean;
+  dedication: boolean;
+  contents: boolean;
+  acknowledgments: boolean;
+  aboutTheAuthor: boolean;
+  bibliography: boolean;
+}
+
+export const EMPTY_BOOK_DETAILS: BookDetails = {
+  title: '',
+  subtitle: '',
+  author: '',
+  copyrightYear: '',
+  publisher: '',
+  isbn: '',
+  dedication: '',
+  acknowledgments: '',
+  aboutTheAuthor: '',
+  bibliography: '',
+};
+
+export const NO_EXTRA_SECTIONS: ExtraSections = {
+  titlePage: false,
+  copyrightPage: false,
+  dedication: false,
+  contents: false,
+  acknowledgments: false,
+  aboutTheAuthor: false,
+  bibliography: false,
+};
 
 export const DEFAULT_FORMAT_OPTIONS: FormatOptions = {
   roleStyles: {},
@@ -272,6 +328,9 @@ export const DEFAULT_FORMAT_OPTIONS: FormatOptions = {
   includeFrontMatter: true,
   chapterSpaceBefore: null,
   chapterSpaceAfter: null,
+  bookDetails: EMPTY_BOOK_DETAILS,
+  extraSections: NO_EXTRA_SECTIONS,
+  replaceFrontMatter: false,
 };
 
 export interface FormatStats {

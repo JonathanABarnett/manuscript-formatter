@@ -14,6 +14,8 @@ import {
 import type { AnalysisResult } from '../shared/ipc.js';
 import { BOOK_LOOKS, TRIM_SIZES } from '../core/templates/design.js';
 import { renderPreviews } from './previews.js';
+import { renderDetailsForm } from './details.js';
+import { hasSeenTour, startTour } from './tour.js';
 
 interface State {
   /** Quick Start builds a design; "own" uses a file the author supplies. */
@@ -439,6 +441,7 @@ function renderReview(): void {
   renderReviewWarnings(state.analysis.profile, state.analysis.analysis);
   renderTemplateFacts(state.analysis.profile);
   renderOptions();
+  renderDetails();
   refreshPreviews();
   renderStyleMap(state.analysis.profile);
   renderStructure();
@@ -502,6 +505,17 @@ function renderReviewWarnings(
     jumpToReview,
   );
   panel.hidden = false;
+}
+
+function renderDetails(): void {
+  renderDetailsForm($('#details-form'), {
+    options: state.options,
+    onChange: (structural) => {
+      // Only a switched section changes the form's shape; typing must not
+      // redraw the field being typed into.
+      if (structural) renderDetails();
+    },
+  });
 }
 
 /**
@@ -1059,8 +1073,12 @@ export function init(): void {
   $('#mode-own').addEventListener('click', () => setMode('own'));
   $('#try-sample').addEventListener('click', () => void useSampleBook());
   $('#start-over').addEventListener('click', startOver);
+  $('#show-tour').addEventListener('click', () => startTour());
   // Also builds the default design and marks the tab, so the page opens ready.
   setMode('quick');
+
+  // First visit gets the walkthrough; afterwards it waits behind the "?".
+  if (!hasSeenTour()) window.setTimeout(startTour, 400);
 
   $('#change-output').addEventListener('click', () => void chooseOutput());
   $('#run-format').addEventListener('click', () => void runFormat());

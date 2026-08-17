@@ -1,11 +1,12 @@
 import { NS, RELTYPE } from '../ooxml/ns.js';
-import type { DocxPackage } from '../ooxml/package.js';
+import type { DocxPackage, Relationships } from '../ooxml/package.js';
 import { attr, child, children, clearChildren, descendants, importNode, wEl } from '../ooxml/xml.js';
 import type { BlockRole, FormatOptions, FormatStats, ManuscriptBlock, StyleRole } from '../types.js';
 import type { LoadedReference } from '../analyze/reference.js';
 import { collectSectPrs } from '../analyze/reference.js';
 import type { LoadedManuscript } from '../analyze/manuscript.js';
 import { styleForRole } from '../roles.js';
+import { buildBackMatter, buildFrontMatter, needsFieldUpdate } from './matter.js';
 import { ResourceMigrator } from './resources.js';
 import { NumberingMerger } from './numbering.js';
 import { NoteMerger } from './notes.js';
@@ -118,7 +119,18 @@ export async function composeDocument(
     wordCount: 0,
   };
 
-  let lastParagraph: Element | null = null;
+  // Generated opening pages come first, before anything from the manuscript.
+  const matterContext = {
+    doc: outDoc,
+    roles: roleStyles,
+    details: options.bookDetails,
+    sections: options.extraSections,
+  };
+  const generatedFront = buildFrontMatter(matterContext);
+  for (const p of generatedFront) outBody.appendChild(p);
+  stats.paragraphsWritten += generatedFront.length;
+
+  let lastParagraph: Element | null = generatedFront.at(-1) ?? null;
   /**
    * Sections cloned from the reference's body section. Only the first may keep
    * the reference's `pgNumType` start value — otherwise every chapter would
@@ -126,7 +138,7 @@ export async function composeDocument(
    */
   let bodySectionsEmitted = 0;
   let pendingPageBreak = false;
-  let anyContentEmitted = false;
+  let anyContentEmitted = generatedFront.length > 0;
   let frontSectionPending = frontSectPrClone !== null && options.includeFrontMatter;
   let inFrontMatter = true;
 
@@ -150,7 +162,11 @@ export async function composeDocument(
       continue;
     }
 
-    if (FRONT_MATTER_ROLES.has(role) && !options.includeFrontMatter) continue;
+    // The manuscript's own opening pages are dropped when they have been
+    // turned off, or when generated pages are standing in for them.
+    if (FRONT_MATTER_ROLES.has(role) && (!options.includeFrontMatter || options.replaceFrontMatter)) {
+      continue;
+    }
 
     const leavingFrontMatter = inFrontMatter && !FRONT_MATTER_ROLES.has(role);
     if (leavingFrontMatter) inFrontMatter = false;
@@ -253,6 +269,16 @@ export async function composeDocument(
     if (role === 'chapterTitle') stats.chapters++;
     else if (role === 'partTitle') stats.parts++;
     if (role === 'sceneBreak') stats.sceneBreaks++;
+  }
+
+  const generatedBack = buildBackMatter(matterContext);
+  for (const p of generatedBack) outBody.appendChild(p);
+  stats.paragraphsWritten += generatedBack.length;
+
+  // A contents table is an empty field until Word evaluates it, so ask Word to
+  // offer that when the document opens.
+  if (needsFieldUpdate(options.extraSections)) {
+    await requestFieldUpdate(out, outRels);
   }
 
   if (bodySectPrClone) {
@@ -609,4 +635,33 @@ function stripPageNumberRestart(sectPr: Element): void {
 
 function dedupe(items: string[]): string[] {
   return [...new Set(items)];
+}
+
+/**
+ * Set `w:updateFields` so Word offers to fill in the contents table on open.
+ * The settings part is created if the reference has none.
+ */
+async function requestFieldUpdate(out: DocxPackage, rels: Relationships): Promise<void> {
+  let target = rels.firstTargetOfType(RELTYPE.settings);
+  if (!target) {
+    target = 'settings.xml';
+    rels.add(RELTYPE.settings, target);
+    out.writeText(
+      `${out.documentDir}settings.xml`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<w:settings xmlns:w="${NS.w}"/>`,
+    );
+    await out.ensureContentType({
+      partName: `${out.documentDir}settings.xml`,
+      partType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+    });
+  }
+  const path = out.resolveTarget(out.documentPath, target);
+  const doc = await out.readXml(path);
+  const root = doc?.documentElement;
+  if (!doc || !root) return;
+  if (child(root, 'updateFields')) return;
+  // `w:updateFields` belongs near the top of the settings sequence.
+  root.insertBefore(wEl(doc, 'updateFields', { val: 'true' }), root.firstChild);
+  out.writeXml(path, doc);
 }

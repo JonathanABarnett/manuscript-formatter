@@ -11,6 +11,10 @@
   </head>
   <body>
     <header class="masthead">
+      <button type="button" class="help-button" id="show-tour" title="How this works">
+        <span aria-hidden="true">?</span>
+        <span class="sr-only">Show the walkthrough again</span>
+      </button>
       <h1>Manuscript Formatter</h1>
       <p>
         Start with a KDP template or a book whose layout you like, add your manuscript, and get a new
@@ -19,6 +23,43 @@
     </header>
 
     <main>
+      <section class="how-it-works" aria-label="How it works">
+        <ol>
+          <li>
+            <svg viewBox="0 0 48 40" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="6" width="16" height="26" rx="2"/><rect x="27" y="6" width="16" height="26" rx="2"/>
+              <path d="M10 14h6M10 20h6M32 14h6M32 20h6"/>
+            </svg>
+            <h3>Choose a design</h3>
+            <p>Pick a size and a look, or use a template you already have.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 48 40" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="8" y="4" width="26" height="30" rx="2"/><path d="M14 12h14M14 19h14M14 26h8"/>
+              <circle cx="35" cy="28" r="8" fill="var(--paper)"/><path d="M31 28l3 3 5-6"/>
+            </svg>
+            <h3>Check the pages</h3>
+            <p>See your own words laid out at the real size of the book.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 48 40" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="6" width="20" height="27" rx="2"/><path d="M10 14h8M10 21h8"/>
+              <path d="M28 20h13M35 14l6 6-6 6"/>
+            </svg>
+            <h3>Make the file</h3>
+            <p>A brand-new Word document. Your originals are untouched.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 48 40" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="12" y="3" width="24" height="24" rx="2"/><path d="M18 11h12M18 18h8"/>
+              <path d="M24 26v10M18 31l6 6 6-6"/>
+            </svg>
+            <h3>Check, then upload</h3>
+            <p>Read it in Word, then let KDP&rsquo;s previewer have the last word.</p>
+          </li>
+        </ol>
+      </section>
+
       <section class="step" id="step-files" aria-labelledby="h-files">
         <h2 id="h-files"><span class="step-number">1</span> Start your book</h2>
 
@@ -142,6 +183,17 @@
               page numbers can look different in the finished file. Always review it in Word.
             </p>
             <div class="previews" id="previews"></div>
+          </div>
+
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <h3>Title page and other extras</h3>
+            </div>
+            <p class="panel-hint">
+              Optional. Fill in what you want and the app builds those pages for you, in your
+              book&rsquo;s design. Anything you leave blank is simply skipped.
+            </p>
+            <div class="details-form" id="details-form"></div>
           </div>
 
           <div class="panel">
