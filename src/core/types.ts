@@ -53,7 +53,7 @@ export const STYLE_ROLES: StyleRole[] = [
 /** What each kind of paragraph is called on screen, in an author's words. */
 export const ROLE_LABELS: Record<BlockRole, string> = {
   frontMatterTitle: 'Title page',
-  frontMatter: 'Title page text',
+  frontMatter: 'Other opening-page text',
   copyright: 'Copyright page',
   partTitle: 'Part title',
   chapterTitle: 'Chapter title',
@@ -61,7 +61,7 @@ export const ROLE_LABELS: Record<BlockRole, string> = {
   subheading: 'Heading inside a chapter',
   bodyFirst: 'First paragraph',
   body: 'Normal paragraph',
-  blockQuote: 'Quotation',
+  blockQuote: 'Indented quotation',
   listItem: 'List item',
   sceneBreak: 'Scene break',
   table: 'Table',
@@ -72,7 +72,7 @@ export const ROLE_LABELS: Record<BlockRole, string> = {
 /** One plain sentence per role, shown on hover and under the pickers. */
 export const ROLE_HINTS: Record<BlockRole, string> = {
   frontMatterTitle: 'Your book title, on the opening page.',
-  frontMatter: 'Anything else on the title page — your name, a series name, a tagline.',
+  frontMatter: 'Your author name, dedication, epigraph, or other text before the first chapter.',
   copyright: 'The © line, ISBN, edition and rights wording. Usually set smaller than the story.',
   partTitle: 'A divider above chapter level, such as "Part One".',
   chapterTitle: 'The line that opens each chapter.',
@@ -81,7 +81,7 @@ export const ROLE_HINTS: Record<BlockRole, string> = {
   bodyFirst:
     'The paragraph that starts a chapter or follows a scene break. Printed books normally leave this one without an indent.',
   body: 'Ordinary paragraphs — the bulk of your book.',
-  blockQuote: 'A quotation set in from both margins.',
+  blockQuote: 'A longer quotation set in from both margins, not ordinary dialogue.',
   listItem: 'A bulleted or numbered item.',
   sceneBreak: 'The small mark between scenes, like * * * or #.',
   table: 'Copied across exactly as it is.',
@@ -166,6 +166,8 @@ export interface ReferenceProfile {
   hasHeaders: boolean;
   hasFooters: boolean;
   hasPageNumbers: boolean;
+  /** Visible words inherited from referenced header/footer parts, excluding bare page numbers. */
+  headerFooterText: string[];
   hasFootnotes: boolean;
   defaultParagraphStyleId: string | null;
   bodyFontName: string | null;
@@ -214,6 +216,7 @@ export interface ManuscriptAnalysis {
   wordCount: number;
   paragraphCount: number;
   chapterCount: number;
+  partCount: number;
   sceneBreakCount: number;
   tableCount: number;
   imageCount: number;
@@ -274,6 +277,7 @@ export const DEFAULT_FORMAT_OPTIONS: FormatOptions = {
 export interface FormatStats {
   paragraphsWritten: number;
   chapters: number;
+  parts: number;
   sceneBreaks: number;
   tables: number;
   imagesCopied: number;

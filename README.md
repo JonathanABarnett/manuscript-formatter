@@ -1,13 +1,23 @@
 # Manuscript Formatter
 
-A local desktop app that takes a correctly formatted Word document as a layout reference, takes a
-separate manuscript, and writes a new `.docx` whose **words come from the manuscript** and whose
-**book layout comes from the reference**.
+A local app that takes a KDP template or an already formatted Word document, applies that layout to
+a separate manuscript, and writes a new `.docx`. It is designed to handle nearly all of the routine
+formatting so the author only needs to give the finished file a final check in Word.
 
 Neither input file is ever modified.
 
+## Privacy and saved files
+
+- **Web:** the selected documents and generated output exist only in the open tab's memory. The app
+  uses no browser database or local storage and makes no network requests. A file reaches disk only
+  when the author chooses **Download**, using the browser's normal download behavior. Closing the tab
+  releases the in-memory documents.
+- **Desktop:** the app reads the two selected files from their existing locations and keeps parsed
+  copies in memory while it is open. It writes only the finished `.docx`, to the save location shown
+  to the author. It does not create a hidden library, project file, history, or backup copy.
+
 ```
-Select template  →  Select manuscript  →  Review what was detected  →  Format  →  Print-ready .docx
+Select design  →  Select manuscript  →  Review what was detected  →  Format  →  Final check in Word
 ```
 
 ## Why it works the way it does
@@ -15,8 +25,9 @@ Select template  →  Select manuscript  →  Review what was detected  →  For
 Rather than rebuilding a document from scratch and trying to re-create the reference's settings, the
 app **starts from a copy of the reference package** and replaces its body with the manuscript's
 content. Everything that makes a book interior look right — page size, mirrored margins, gutter,
-running heads, footers, page-number fields, style definitions, theme fonts, footnote layout — comes
-across natively because it was never taken apart.
+running heads, footers, page-number fields, style definitions, theme fonts, and footnote layout comes
+across natively because it was never taken apart. Words already present in a header or footer come
+across too, so the review screen points them out before formatting.
 
 The manuscript contributes its text, its paragraph structure, and its *semantic* character
 formatting (italic, bold, small caps, superscript). Its *visual* formatting — fonts, sizes, colours,
@@ -42,9 +53,8 @@ For development, `npm run watch` rebuilds on change.
 npm run dist
 ```
 
-Writes to `release/`: a portable single-file `.exe` that runs with no install, and an NSIS
-installer. `npm run dist` builds unsigned, so Windows SmartScreen will warn on first run until you
-sign it with a code-signing certificate.
+Writes an NSIS installer and a ZIP package to `release/`. `npm run dist` builds unsigned, so Windows
+SmartScreen will warn on first run until you sign it with a code-signing certificate.
 
 > On Windows, electron-builder's first run may fail extracting its signing toolchain with
 > `Cannot create symbolic link`. It only trips on macOS `.dylib` symlinks a Windows build never
@@ -60,7 +70,7 @@ sign it with a code-signing certificate.
 npm run serve:web
 ```
 
-The whole engine is compiled into a 254 KB bundle that runs **in the page**. There is no server and
+The whole engine is compiled into a roughly 270 KB bundle that runs **in the page**. There is no server and
 no upload: your manuscript is read, analysed and rebuilt on your own machine, and the finished
 document arrives as a download. The page ships with `connect-src 'none'`, so it cannot make network
 requests at all — for a tool whose input is an unpublished book, that is the point.
@@ -105,7 +115,7 @@ trusts explicit Word heading styles first, then falls back to weighted text evid
 ("Chapter", "Prologue"), bare numbers, page breaks, centring, boldness, line length, sentence
 punctuation — so a manuscript typed with no styles at all still comes out structured.
 
-Anything classified with low confidence is flagged **needs review** in the app, and every paragraph's
+Anything classified with low confidence is flagged **check this** in the app, and every paragraph's
 role can be overridden by hand before formatting.
 
 ## Previewing before you convert
@@ -114,20 +124,22 @@ The review screen draws a proof of every kind of page the formatter will produce
 copyright page, part title, chapter opening, body page, subheading, scene break, block quote and
 list — laid out at the template's real trim size, in the template's own fonts, using your own text.
 
-Each proof carries the style pickers for the roles it shows. Change one and the page redraws
-immediately; change a paragraph's role in the structure list and the proofs follow. Nothing is
-written until you press Format.
+The normal review stays focused on sample pages and anything the app is unsure about. Word-style
+choices are kept inside a collapsed Advanced section so most authors never need to see them. Change
+a paragraph's role in the structure list and the sample pages update immediately. Nothing is written
+until you press Format.
 
 The chapter-opening proof includes the blank paragraphs a template uses to sink a chapter title
 partway down the page, because that is a large part of why a formatted chapter looks right.
 
-These are layout proofs, not a Word rendering engine: line breaks and hyphenation will differ from
-Word, and how much text fits a page is approximate. Page proportions, margins, type sizes, indents,
-alignment, line spacing and the chapter sink are all read from the template and are exact.
+These are layout guides, not a Word rendering engine: line breaks, page breaks, pictures, headers,
+footers, page numbers, and hyphenation may look different in Word. The preview uses the template's
+page proportions, margins, type sizes, indents, alignment, line spacing, and chapter spacing.
 
 ## What survives the conversion
 
-- **Text** — copied verbatim. Nothing is rewritten, reordered, or summarised.
+- **Story text** — moved without rewriting or summarising it. Optional punctuation and spacing
+  cleanup can make the specific changes described on the review screen.
 - **Emphasis** — italic, bold, small caps, strikethrough, superscript and subscript.
 - **Footnotes and endnotes** — merged into the output, renumbered past anything the reference
   already had, with their styles remapped onto the reference's equivalents.
@@ -144,13 +156,13 @@ alignment, line spacing and the chapter sink are all read from the template and 
 | --- | --- | --- |
 | Start each chapter | from the reference | New page, right-hand page (inserts odd-page section breaks), or straight on |
 | No indent on opening paragraphs | from the reference | First paragraph after a chapter title or scene break sits flush left |
-| Drop blank paragraphs | on | Spacing comes from the template's styles instead of empty lines |
-| Strip tabbed indents | on | Removes tabs and spaces typed at paragraph starts |
-| Keep italics and bold | on | Emphasis inside the text is preserved |
-| Include front matter | on | Everything before the first chapter |
+| Remove empty paragraphs | on | Spacing comes from the template's styles instead of empty lines; turn off for poetry or intentional blank lines |
+| Remove manually typed indents | on | Removes tabs and spaces typed at paragraph starts |
+| Keep emphasis | on | Italics, bold, underlining, small capitals, and similar emphasis are preserved |
+| Include front matter | on | Keeps material before the first chapter, including title, copyright, dedication, and epigraph pages |
 | Scene break ornament | keep as written | Replaces `#` or `***` with the template's ornament |
-| Curly quotes and proper dashes | **off** | Converts `"` to `“ ”`, `--` to an em dash, `...` to an ellipsis |
-| Collapse double spaces | **off** | Two spaces after a full stop become one |
+| Fix quotes, dashes, and ellipses | **off** | Converts `"` to `“ ”`, `--` to an em dash, and `...` to an ellipsis |
+| Reduce multiple spaces to one | **off** | Collapses every group of two or more spaces |
 
 The last two change characters in the text, so they are off by default.
 
@@ -196,7 +208,7 @@ npm test
 npm run typecheck
 ```
 
-41 tests build real `.docx` fixtures on disk, run the full pipeline, and read the output package
+54 tests build real `.docx` fixtures on disk, run the full pipeline, and read the output package
 back — asserting on page geometry, style mapping, text fidelity, section breaks, resource migration
 and package validity.
 
@@ -215,3 +227,5 @@ Produces an installer via `electron-builder` (NSIS on Windows, DMG on macOS, App
   each one.
 - Tables are copied at their original width and are not re-fitted to a narrower trim size.
 - Smart-quote conversion resolves quotation nesting within a paragraph, not across paragraphs.
+- Text in the design file's headers and footers is intentionally kept. The review screen shows that
+  wording so the author can replace an old title or author name in Word if needed.

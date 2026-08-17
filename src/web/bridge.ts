@@ -32,6 +32,21 @@ let lastOutput: { fileName: string; blob: Blob } | null = null;
 
 /** Register a file and return the key the UI will use to refer to it. */
 export function remember(file: File): string {
+  // A new selection makes any previously generated download obsolete. Dropping
+  // the Blob here releases it from memory; no output is stored by the app.
+  lastOutput = null;
+  // Selecting the same disk file twice should produce the same key so the UI
+  // can catch an accidental template/manuscript duplicate.
+  for (const [key, known] of files) {
+    if (
+      known.name === file.name &&
+      known.size === file.size &&
+      known.lastModified === file.lastModified &&
+      known.type === file.type
+    ) {
+      return key;
+    }
+  }
   // Distinguish same-named files picked in sequence, without leaking a path.
   let key = file.name;
   let counter = 2;
@@ -105,6 +120,12 @@ export const webBridge: FormatterApi = {
         read(payload.referencePath),
         read(payload.manuscriptPath),
       ]);
+      // Keep the active pair available in case the user replaces only one of
+      // them, but release files from older selections from tab memory.
+      const activeKeys = new Set([payload.referencePath, payload.manuscriptPath]);
+      for (const key of files.keys()) {
+        if (!activeKeys.has(key)) files.delete(key);
+      }
       // Parse once here and keep it, so Format does not re-read both files.
       const [loadedReference, loadedManuscript] = await Promise.all([
         analyzeReference(reference),

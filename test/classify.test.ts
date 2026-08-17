@@ -194,10 +194,27 @@ describe('manuscript classification', () => {
     const { analysis } = await loadManuscript(path);
 
     expect(analysis.chapterCount).toBe(2);
+    expect(analysis.partCount).toBe(0);
     expect(analysis.sceneBreakCount).toBe(1);
     expect(analysis.paragraphCount).toBe(9);
     expect(analysis.bodyStartIndex).toBe(3);
     expect(analysis.wordCount).toBeGreaterThan(100);
+  });
+
+  it('counts parts separately from chapters', async () => {
+    const path = await writeDocx(join(dir, 'parts.docx'), {
+      paragraphs: [
+        { runs: [{ text: 'PART ONE', bold: true }], alignment: 'center' },
+        { runs: [{ text: 'CHAPTER ONE', bold: true }], alignment: 'center', leadingPageBreak: true },
+        { text: PROSE_1 },
+        { runs: [{ text: 'CHAPTER TWO', bold: true }], alignment: 'center', leadingPageBreak: true },
+        { text: PROSE_2 },
+      ],
+    });
+    const { analysis } = await loadManuscript(path);
+
+    expect(analysis.partCount).toBe(1);
+    expect(analysis.chapterCount).toBe(2);
   });
 
   it('treats front matter as front matter, not as chapter one', async () => {

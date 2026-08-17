@@ -39,6 +39,9 @@ const state: State = {
   result: null,
 };
 
+/** Prevent a slower, older file analysis from replacing a newer selection. */
+let analysisVersion = 0;
+
 /** Beyond this the list stops being a review aid and starts being a scroll. */
 const ALL_BLOCKS_LIMIT = 2500;
 
@@ -181,6 +184,7 @@ function setupPicker(kind: 'reference' | 'manuscript'): void {
 }
 
 async function setPath(kind: 'reference' | 'manuscript', path: string): Promise<void> {
+  analysisVersion++;
   if (kind === 'reference') state.referencePath = path;
   else state.manuscriptPath = path;
 
@@ -203,10 +207,17 @@ async function setPath(kind: 'reference' | 'manuscript', path: string): Promise<
     file.title = path;
   }
 
+  if (state.referencePath && state.referencePath === state.manuscriptPath) {
+    $('#analyze-status').textContent = 'Choose a different file for the design and the manuscript.';
+    showError('The design file and manuscript cannot be the same file.');
+    return;
+  }
+
   if (state.referencePath && state.manuscriptPath) await runAnalysis();
 }
 
 async function runAnalysis(): Promise<void> {
+  const version = analysisVersion;
   const status = $('#analyze-status');
   status.className = 'status spinner';
   status.textContent = 'Reading your two files';
@@ -216,6 +227,8 @@ async function runAnalysis(): Promise<void> {
     referencePath: state.referencePath!,
     manuscriptPath: state.manuscriptPath!,
   });
+
+  if (version !== analysisVersion) return;
 
   status.className = 'status';
   if (!outcome.ok) {
@@ -227,9 +240,13 @@ async function runAnalysis(): Promise<void> {
   state.analysis = outcome.value;
   state.options = { ...outcome.value.suggestedOptions, roleStyles: {}, roleOverrides: {} };
   const found = outcome.value.analysis;
-  status.textContent =
-    `Read ${found.wordCount.toLocaleString()} words and found ${found.chapterCount} ` +
-    `chapter${found.chapterCount === 1 ? '' : 's'}. Have a look below.`;
+  const structureFound = [
+    `${found.chapterCount} chapter${found.chapterCount === 1 ? '' : 's'}`,
+    found.partCount > 0 ? `${found.partCount} part${found.partCount === 1 ? '' : 's'}` : null,
+  ]
+    .filter(Boolean)
+    .join(' and ');
+  status.textContent = `Read ${found.wordCount.toLocaleString()} words and found ${structureFound}. Check the notes below.`;
 
   if (!state.outputPath) {
     state.outputPath = await window.formatter.suggestOutput(state.manuscriptPath!);
@@ -246,11 +263,72 @@ async function runAnalysis(): Promise<void> {
 
 function renderReview(): void {
   if (!state.analysis) return;
+  renderReviewWarnings(state.analysis.profile, state.analysis.analysis);
   renderTemplateFacts(state.analysis.profile);
   renderOptions();
   refreshPreviews();
   renderStyleMap(state.analysis.profile);
   renderStructure();
+}
+
+/** Important findings belong before the Format button, not after it. */
+function renderReviewWarnings(
+  profile: ReferenceProfile,
+  analysis: AnalysisResult['analysis'],
+): void {
+  const panel = $('#review-warnings');
+  const inherited = profile.headerFooterText;
+  const needsReview = analysis.blocks.filter(
+    (block) => block.confidence < 0.6 && block.role !== 'body' && block.role !== 'empty',
+  ).length;
+  const warnings = [...new Set([...profile.warnings, ...analysis.warnings])].filter(
+    (warning) => inherited.length === 0 || !warning.startsWith('Words in the design file'),
+  );
+
+  if (warnings.length === 0 && inherited.length === 0) {
+    panel.hidden = true;
+    panel.replaceChildren();
+    return;
+  }
+
+  const items: HTMLElement[] = warnings.map((warning) => el('li', {}, warning));
+  if (inherited.length > 0) {
+    items.unshift(
+      el(
+        'li',
+        {},
+        el('strong', {}, 'Header or footer words being reused: '),
+        inherited.map((text) => `“${text}”`).join(', '),
+      ),
+    );
+  }
+
+  const jumpToReview =
+    needsReview > 0
+      ? el(
+          'button',
+          { class: 'secondary review-jump', type: 'button' },
+          'Go to items marked “check this”',
+        )
+      : null;
+  jumpToReview?.addEventListener('click', () => {
+    const first = document.querySelector<HTMLElement>('.block-row.needs-review');
+    first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    first?.querySelector<HTMLSelectElement>('select')?.focus({ preventScroll: true });
+  });
+
+  replace(
+    panel,
+    el('h3', {}, 'Check these before you continue'),
+    el(
+      'p',
+      { class: 'panel-hint' },
+      'The app can finish the formatting, but these items deserve a quick look first.',
+    ),
+    el('ul', {}, ...items),
+    jumpToReview,
+  );
+  panel.hidden = false;
 }
 
 /**
@@ -265,11 +343,6 @@ function refreshPreviews(): void {
     blocks: state.analysis.analysis.blocks,
     options: state.options,
     pageWidthPx: state.previewWidth,
-    onRoleStyleChange: (role, styleId) => {
-      state.options.roleStyles[role] = styleId;
-      refreshPreviews();
-      renderStyleMap(state.analysis!.profile);
-    },
   });
 }
 
@@ -281,15 +354,15 @@ function renderTemplateFacts(profile: ReferenceProfile): void {
     [
       'Margins',
       'The white space around your text on every page.',
-      `${inches(m.top)} top and bottom, ${inches(m.left)} and ${inches(m.right)} at the sides`,
+      `${inches(m.top)} top, ${inches(m.bottom)} bottom, ${inches(m.left)} left, ${inches(m.right)} right`,
     ],
     [
-      'Binding margin',
+      'Extra binding space',
       'Extra space on the inside edge so your words are not swallowed by the spine.',
       m.gutter > 0 ? inches(m.gutter) : 'none — built into the side margins',
     ],
     [
-      'Facing pages',
+      'Mirrored left and right pages',
       'Left and right pages mirror each other, the way an open book does.',
       profile.pageSetup.mirrorMargins ? 'yes' : 'no',
     ],
@@ -329,8 +402,8 @@ function renderTemplateFacts(profile: ReferenceProfile): void {
           : 'none',
     ],
     [
-      'Named designs',
-      'Ready-made looks stored in the file that parts of your book can use.',
+      'Formatting styles',
+      'Ready-made looks stored in the design file for titles, paragraphs, quotations, and more.',
       `${profile.styles.length} to choose from`,
     ],
   ];
@@ -360,7 +433,7 @@ function renderOptions(): void {
     el(
       'option',
       { value: 'continuous', selected: o.chapterStart === 'continuous' },
-      'Straight after the last chapter',
+      'Continue on the same page',
     ),
   );
   chapterStart.addEventListener('change', () => {
@@ -390,7 +463,7 @@ function renderOptions(): void {
       el(
         'option',
         { value: '', selected: o[key] === null },
-        `Follow the design (${fromDesign})`,
+        `Use the design file (${fromDesign === 0 ? 'none' : `${fromDesign} blank line${fromDesign === 1 ? '' : 's'}`})`,
       ),
     );
     for (let n = 0; n <= 12; n++) {
@@ -435,9 +508,7 @@ function renderOptions(): void {
     row(
       el('span', {}, 'Where chapters begin'),
       chapterStart,
-      o.chapterStart === 'oddPage'
-        ? 'Like most printed books. A blank page is added when one is needed to land on the right.'
-        : undefined,
+      'Choosing a right-hand page can add a blank page between chapters.',
     ),
     row(
       hinted('Space above chapter titles', 'Blank lines that push a chapter title down the page.'),
@@ -448,7 +519,7 @@ function renderOptions(): void {
       spacing('chapterSpaceAfter', profile?.chapterTitleBlanksAfter ?? 0),
     ),
     row(
-      el('span', {}, 'Mark between scenes'),
+      el('span', {}, 'Mark used between scenes'),
       sceneBreak,
       'Replaces whatever you used — # or *** — everywhere at once.',
     ),
@@ -459,29 +530,33 @@ function renderOptions(): void {
     ),
     checkbox(
       'removeEmptyParagraphs',
-      'Remove empty lines',
-      'Spacing comes from the design instead, which keeps it even throughout. Recommended.',
+      'Remove empty paragraphs',
+      'Recommended for most novels. Turn this off for poetry or layouts that use blank lines on purpose.',
     ),
     checkbox(
       'removeManualIndents',
-      'Remove tabbed indents',
-      'Takes out tabs and spaces typed at the start of paragraphs, so indents stay identical.',
+      'Remove manually typed indents',
+      'Removes tabs and spaces typed at the start of paragraphs so the design controls every indent.',
     ),
-    checkbox('keepEmphasis', 'Keep italics and bold', 'Any emphasis in your writing is preserved.'),
+    checkbox(
+      'keepEmphasis',
+      'Keep italics, bold, and other emphasis',
+      'Keeps emphasis such as italics, bold, underlining, and small capitals.',
+    ),
     checkbox(
       'includeFrontMatter',
-      'Include your title and copyright pages',
-      'Turn off to start the book at chapter one.',
+      'Include front matter',
+      'Keeps material before the first chapter, such as the title, copyright, dedication, or epigraph.',
     ),
     checkbox(
       'smartTypography',
-      'Use curly quotes and proper dashes',
-      'Turns " into “ ”, -- into a dash, ... into an ellipsis. This changes characters in your text, so leave it off if you are unsure.',
+      'Fix straight quotes, dashes, and ellipses',
+      'Changes straight quotes to curly quotes, -- to an em dash, and ... to an ellipsis. Leave this off if your manuscript is already edited.',
     ),
     checkbox(
       'collapseMultipleSpaces',
-      'Reduce double spaces to single',
-      'The two spaces after a full stop become one, as printed books use.',
+      'Reduce multiple spaces to one',
+      'Changes every group of two or more spaces to a single space.',
     ),
   );
 }
@@ -525,10 +600,10 @@ function whyChosen(profile: ReferenceProfile, role: StyleRole): string {
     return 'You chose this one.';
   }
   const evidence = profile.roleEvidence[role];
-  if (evidence) return `Picked because the ${evidence}.`;
+  if (evidence) return `Reason: ${evidence}.`;
   return profile.roleStyles[role]
     ? 'Picked from your design file.'
-    : 'Your design has nothing for this, so the closest match is used.';
+      : 'No exact match was found, so the closest available formatting is used.';
 }
 
 /** The undo button only makes sense once something has been changed. */
@@ -572,7 +647,8 @@ function renderStructure(): void {
     $('#structure-summary'),
     stat('words', analysis.wordCount.toLocaleString()),
     stat('paragraphs', analysis.paragraphCount.toLocaleString()),
-    stat('chapters', (counts.get('chapterTitle') ?? 0) + (counts.get('partTitle') ?? 0)),
+    stat('chapters', counts.get('chapterTitle') ?? 0),
+    (counts.get('partTitle') ?? 0) > 0 ? stat('parts', counts.get('partTitle') ?? 0) : null,
     stat('scene breaks', counts.get('sceneBreak') ?? 0),
     analysis.tableCount > 0 ? stat('tables', analysis.tableCount) : null,
     analysis.imageCount > 0 ? stat('images', analysis.imageCount) : null,
@@ -587,7 +663,7 @@ function renderStructure(): void {
     : needsReview > 0
       ? `Your chapters, headings and scene breaks. ${needsReview} line${
           needsReview === 1 ? ' is' : 's are'
-        } marked "not sure" — worth a glance. Tick the box above to see everything.`
+        } marked "check this". Turn on "Show every paragraph" to see the full manuscript.`
       : 'Your chapters, headings and scene breaks. Use the menu on the right to change what any line is.';
 
   const candidates = state.showAllBlocks
@@ -602,7 +678,7 @@ function renderStructure(): void {
       el(
         'p',
         { class: 'block-empty' },
-        'No chapters or headings were recognised. Tick "Show every paragraph" above, then mark ' +
+        'No chapters or headings were found. Turn on "Show every paragraph" above, then mark ' +
           'your chapter titles by hand using the menus.',
       ),
     );
@@ -645,10 +721,10 @@ function renderBlockRow(block: ManuscriptBlock): HTMLElement {
       'span',
       {
         class: 'block-text',
-        title: block.reasons.length > 0 ? `Recognised because it ${block.reasons.join('; ')}` : undefined,
+        title: block.reasons.length > 0 ? `Reason: ${block.reasons.join('; ')}` : undefined,
       },
       block.preview || '(empty line)',
-      needsReview ? el('span', { class: 'flag' }, 'not sure') : null,
+      needsReview ? el('span', { class: 'flag' }, 'check this') : null,
       override ? el('span', { class: 'flag changed' }, 'changed by you') : null,
     ),
     select,
@@ -720,10 +796,13 @@ function renderResult(result: FormatResult): void {
   const line = [
     `${s.wordCount.toLocaleString()} words`,
     `${s.chapters} chapter${s.chapters === 1 ? '' : 's'}`,
+    s.parts > 0 ? `${s.parts} part${s.parts === 1 ? '' : 's'}` : null,
     s.sceneBreaks > 0 ? `${s.sceneBreaks} scene break${s.sceneBreaks === 1 ? '' : 's'}` : null,
     s.tables > 0 ? `${s.tables} table${s.tables === 1 ? '' : 's'}` : null,
     s.imagesCopied > 0 ? `${s.imagesCopied} picture${s.imagesCopied === 1 ? '' : 's'}` : null,
-    s.footnotesCopied > 0 ? `${s.footnotesCopied} footnotes` : null,
+    s.footnotesCopied > 0
+      ? `${s.footnotesCopied} footnote${s.footnotesCopied === 1 ? '' : 's'}`
+      : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -742,20 +821,35 @@ function renderResult(result: FormatResult): void {
   const panel = $('#result');
   replace(
     panel,
-    el('h3', {}, 'Your book is ready'),
+    el('h3', {}, 'Your formatted Word file is ready'),
     el('p', { class: 'path' }, result.outputPath),
     el('p', {}, line),
     el(
       'p',
       { class: 'result-next' },
-      'Open it in Word and flick through before you upload it. Your two original files are ' +
-        'untouched, so you can change anything above and make it again.',
+      onWeb
+        ? 'Download it, open it in Word, and review every page before uploading to KDP. Your two original files are untouched, so you can change any choice above and make it again.'
+        : 'Open it in Word and review every page before uploading to KDP. Your two original files are untouched, so you can change any choice above and make it again.',
+    ),
+    el(
+      'div',
+      { class: 'final-checklist' },
+      el('h4', {}, 'Final check in Word'),
+      el(
+        'ul',
+        {},
+        el('li', {}, 'Chapter and part openings begin on the pages you expect.'),
+        el('li', {}, 'Page numbers run in order and any blank pages are intentional.'),
+        el('li', {}, 'The correct book title and author appear in headers, footers, and opening pages.'),
+        el('li', {}, 'Pictures and tables fit inside the page margins.'),
+        el('li', {}, 'The copyright page and table of contents, if used, are up to date.'),
+      ),
     ),
     result.warnings.length > 0
       ? el(
           'div',
           { class: 'warnings' },
-          el('h4', {}, 'A few things worth a look'),
+          el('h4', {}, 'Please check'),
           el('ul', {}, ...result.warnings.map((w) => el('li', {}, w))),
         )
       : null,
@@ -779,8 +873,8 @@ export function init(): void {
     $('#change-output').hidden = true;
     $('#output-path-label').textContent = 'Downloads as';
     $('#reassurance').textContent =
-      'Everything runs inside this page. Your documents are never uploaded, and neither ' +
-      'source file is modified — a new document is generated for you to download.';
+      'Your files stay only in this tab’s memory while it is open. They are never uploaded or stored ' +
+      'by the app. The finished Word file is saved only when you choose Download; nothing is sent to KDP.';
   }
 
   setupPicker('reference');

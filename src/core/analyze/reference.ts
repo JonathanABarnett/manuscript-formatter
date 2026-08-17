@@ -53,22 +53,29 @@ export async function analyzeReference(input: DocxInput): Promise<LoadedReferenc
   const headerFooter = await inspectHeadersAndFooters(pkg, rels, sectPrs);
   const hasFootnotes = await documentHasFootnotes(pkg, rels);
 
+  if (headerFooter.text.length > 0) {
+    warnings.push(
+      'Words in the design file\'s headers or footers will also appear in the new book. ' +
+        'Make sure the names shown below belong to this book.',
+    );
+  }
+
   if (sectPrs.length > 1) {
     warnings.push(
-      `The reference has ${sectPrs.length} sections. The last one is used as the body ` +
-        'template; the first is used for front matter.',
+      `The design file uses ${sectPrs.length} different page-layout sections. The first is used ` +
+        'for the opening pages and the last is used for the main book.',
     );
   }
   if (!detection.roleStyles.chapterTitle) {
     warnings.push(
-      'No chapter-title style was found in the reference. Chapter titles will be centered ' +
-        'and bolded using the body style unless you pick a style on the review screen.',
+      'No chapter-title formatting was found in the design file. Chapter titles will use centered, ' +
+        'bold body text unless you choose a different look below.',
     );
   }
   if (facts.filter((f) => !f.isEmpty).length < 5) {
     warnings.push(
-      'The reference contains almost no text, so style roles were detected from style ' +
-        'names alone. Check the mapping below before formatting.',
+      'The design file contains very little sample text, so some formatting choices were guessed ' +
+        'from their names. Check the sample pages below.',
     );
   }
 
@@ -94,6 +101,7 @@ export async function analyzeReference(input: DocxInput): Promise<LoadedReferenc
     hasHeaders: headerFooter.hasHeaders,
     hasFooters: headerFooter.hasFooters,
     hasPageNumbers: headerFooter.hasPageNumbers,
+    headerFooterText: headerFooter.text,
     hasFootnotes,
     defaultParagraphStyleId: styles.defaultParagraphStyleId,
     bodyFontName: bodyProps?.fontName ?? null,
@@ -127,7 +135,7 @@ function readPageSetup(
   const width = numAttr(pgSz, 'w');
   const height = numAttr(pgSz, 'h');
   if (width === null || height === null) {
-    warnings.push('The reference has no page size; US Letter is assumed.');
+    warnings.push('The design file has no page size. The new book will use US Letter size.');
   }
   const settingsRoot = settingsDoc?.documentElement ?? null;
   const cols = child(sectPr, 'cols');
@@ -208,7 +216,7 @@ function detectRoles(
       styles,
       /first\s*para|body\s*text\s*first|text\s*first|no\s*indent|noindent|chapter\s*first|opening/i,
     ),
-    'style name marks it as a first / no-indent paragraph',
+    'the design file names it as a first paragraph without an indent',
   );
 
   // --- body: the style carrying the bulk of the reference's prose ----------
@@ -221,7 +229,11 @@ function detectRoles(
   if (roleStyles.bodyFirst && proseUsage.size > 1) proseUsage.delete(roleStyles.bodyFirst);
   const topProse = pickBodyCandidate(styles, proseUsage);
   if (topProse) {
-    set('body', topProse[0], `used by ${topProse[1]} prose paragraph(s) in the reference`);
+    set(
+      'body',
+      topProse[0],
+      `used by ${topProse[1]} regular paragraph${topProse[1] === 1 ? '' : 's'} in the design file`,
+    );
   }
   if (!roleStyles.body) {
     const byName = firstIdByNames(styles, ['Body Text', 'Body', 'Book Body', 'Text', 'Normal']);
@@ -268,7 +280,11 @@ function detectRoles(
   }
   const topChapter = topEntry(chapterUsage);
   if (topChapter) {
-    set('chapterTitle', topChapter[0], `used by ${topChapter[1]} heading(s) in the reference`);
+    set(
+      'chapterTitle',
+      topChapter[0],
+      `used by ${topChapter[1]} main heading${topChapter[1] === 1 ? '' : 's'} in the design file`,
+    );
   }
   const outline0 = styles
     .paragraphStyleIds()
@@ -314,7 +330,11 @@ function detectRoles(
   }
   const topScene = topEntry(sceneUsage);
   if (topScene) {
-    set('sceneBreak', topScene[0], `used by ${topScene[1]} ornament line(s) in the reference`);
+    set(
+      'sceneBreak',
+      topScene[0],
+      `used by ${topScene[1]} scene-break mark${topScene[1] === 1 ? '' : 's'} in the design file`,
+    );
   }
   set(
     'sceneBreak',
@@ -379,10 +399,18 @@ function detectRoles(
     'style name mentions front matter',
   );
   if (!roleStyles.frontMatter) {
-    set('frontMatter', roleStyles.bodyFirst ?? roleStyles.body, 'falls back to body text');
+    set(
+      'frontMatter',
+      roleStyles.bodyFirst ?? roleStyles.body,
+      'uses the same formatting as regular book text',
+    );
   }
   if (!roleStyles.copyright) {
-    set('copyright', roleStyles.frontMatter, 'falls back to the front-matter style');
+    set(
+      'copyright',
+      roleStyles.frontMatter,
+      'uses the same formatting as the other opening-page text',
+    );
   }
 
   // --- layout behaviour ---------------------------------------------------
@@ -572,7 +600,12 @@ async function inspectHeadersAndFooters(
   pkg: DocxPackage,
   rels: Awaited<ReturnType<DocxPackage['relsFor']>>,
   sectPrs: Element[],
-): Promise<{ hasHeaders: boolean; hasFooters: boolean; hasPageNumbers: boolean }> {
+): Promise<{
+  hasHeaders: boolean;
+  hasFooters: boolean;
+  hasPageNumbers: boolean;
+  text: string[];
+}> {
   const referenced = new Set<string>();
   for (const sectPr of sectPrs) {
     for (const kind of ['headerReference', 'footerReference'] as const) {
@@ -585,6 +618,7 @@ async function inspectHeadersAndFooters(
   let hasHeaders = false;
   let hasFooters = false;
   let hasPageNumbers = false;
+  const visibleText = new Set<string>();
 
   for (const id of referenced) {
     const rel = rels.byId(id);
@@ -595,8 +629,12 @@ async function inspectHeadersAndFooters(
     const doc = await pkg.readXml(partPath);
     if (!doc) continue;
     if (containsPageField(doc.documentElement)) hasPageNumbers = true;
+    const words = textOf(doc.documentElement).replace(/\s+/g, ' ').trim();
+    // A cached page-field result such as "1" is not template wording the
+    // author needs to replace. Keep any surrounding title or author text.
+    if (words && !/^(?:page\s*)?\d+$/i.test(words)) visibleText.add(words);
   }
-  return { hasHeaders, hasFooters, hasPageNumbers };
+  return { hasHeaders, hasFooters, hasPageNumbers, text: [...visibleText] };
 }
 
 /** Detect a PAGE field, written either as `fldSimple` or an `instrText` run. */

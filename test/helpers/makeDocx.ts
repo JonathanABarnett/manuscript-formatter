@@ -71,6 +71,9 @@ export interface DocSpec {
   footnotes?: Array<{ id: number; text: string }>;
   /** Package a 1x1 PNG at word/media/test.png for `image` paragraphs. */
   image?: boolean;
+  /** Optional visible template wording inherited through a header or footer. */
+  headerText?: string;
+  footerText?: string;
 }
 
 /** Smallest valid PNG, so image migration has real bytes to move. */
@@ -245,6 +248,16 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
       '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>',
     );
   }
+  if (spec.headerText) {
+    overrides.push(
+      '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>',
+    );
+  }
+  if (spec.footerText) {
+    overrides.push(
+      '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>',
+    );
+  }
 
   zip.file(
     '[Content_Types].xml',
@@ -285,6 +298,24 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
     );
     zip.file('word/media/test.png', TEST_PNG);
   }
+  if (spec.headerText) {
+    docRels.push(
+      '<Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+    );
+    zip.file(
+      'word/header1.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="${W}"><w:p><w:r><w:t>${esc(spec.headerText)}</w:t></w:r></w:p></w:hdr>`,
+    );
+  }
+  if (spec.footerText) {
+    docRels.push(
+      '<Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+    );
+    zip.file(
+      'word/footer1.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W}"><w:p><w:r><w:t>${esc(spec.footerText)}</w:t></w:r></w:p></w:ftr>`,
+    );
+  }
   zip.file(
     'word/_rels/document.xml.rels',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -307,10 +338,14 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
 
   zip.file(
     'word/document.xml',
+    // Header/footer references belong in the section properties and use the
+    // stable relationship ids added above.
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W}" xmlns:r="${R}" xmlns:a="${A}" xmlns:wp="${WP}" xmlns:pic="${PIC}"><w:body>` +
       spec.paragraphs.map(paraXml).join('') +
-      `<w:sectPr>${spec.sectPr ?? LETTER_SECTPR}</w:sectPr>` +
+      `<w:sectPr>${spec.headerText ? '<w:headerReference w:type="default" r:id="rIdHeader"/>' : ''}` +
+      `${spec.footerText ? '<w:footerReference w:type="default" r:id="rIdFooter"/>' : ''}` +
+      `${spec.sectPr ?? LETTER_SECTPR}</w:sectPr>` +
       '</w:body></w:document>',
   );
 

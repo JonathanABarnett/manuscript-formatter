@@ -2,7 +2,7 @@
   "name": "manuscript-formatter",
   "productName": "Manuscript Formatter",
   "version": "0.1.0",
-  "description": "Apply the layout and formatting of a reference .docx to a manuscript .docx, producing a print-ready Word document.",
+  "description": "Apply the layout of a KDP template or formatted book to a manuscript, producing a Word document ready for final review.",
   "private": true,
   "type": "module",
   "main": "dist/main/main.cjs",

@@ -46,7 +46,8 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
     blocks,
     wordCount: blocks.reduce((sum, b) => sum + b.wordCount, 0),
     paragraphCount: blocks.filter((b) => b.kind === 'paragraph' && !b.isEmpty).length,
-    chapterCount: blocks.filter((b) => b.role === 'chapterTitle' || b.role === 'partTitle').length,
+    chapterCount: blocks.filter((b) => b.role === 'chapterTitle').length,
+    partCount: blocks.filter((b) => b.role === 'partTitle').length,
     sceneBreakCount: blocks.filter((b) => b.role === 'sceneBreak').length,
     tableCount: blocks.filter((b) => b.kind === 'table').length,
     imageCount: blocks.filter((b) => b.hasImage).length,
@@ -63,8 +64,8 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
   }
   if (analysis.tableCount > 0) {
     warnings.push(
-      `${analysis.tableCount} table(s) are copied across unchanged; check their width against ` +
-        'the reference page size afterwards.',
+      `${analysis.tableCount} table${analysis.tableCount === 1 ? ' is' : 's are'} copied without resizing. ` +
+        `${analysis.tableCount === 1 ? 'Check its' : 'Check their'} width in Word before uploading to KDP.`,
     );
   }
 
@@ -274,14 +275,21 @@ function applyStructuralPasses(blocks: ManuscriptBlock[], warnings: string[]): v
 
   // --- "Chapter 7" followed by "The Meeting" -------------------------------
   for (let i = 0; i < blocks.length; i++) {
-    if (!isHeading(blocks[i])) continue;
+    // A part title followed by "Chapter One" is two real divisions, not a
+    // chapter title and subtitle. Subtitle folding only begins at a chapter.
+    if (blocks[i].role !== 'chapterTitle') continue;
+    let crossedPageBreak = false;
     for (let j = i + 1; j < blocks.length; j++) {
       const b = blocks[j];
-      if (isSkippable(b)) continue;
+      if (isSkippable(b)) {
+        if (b.role === 'pageBreak') crossedPageBreak = true;
+        continue;
+      }
       // An explicitly styled Heading 2 is a real subheading and stays one; an
       // inferred short line under a chapter number is the chapter's title.
       const inferredSubhead = b.role === 'subheading' && b.confidence < 0.7;
-      if ((isHeading(b) || inferredSubhead) && b.wordCount <= 12) {
+      const sameOpening = !crossedPageBreak && !b.hasPageBreakBefore && !b.structuralMarker;
+      if (sameOpening && (isHeading(b) || inferredSubhead) && b.wordCount <= 12) {
         b.role = 'chapterSubtitle';
         b.autoRole = 'chapterSubtitle';
         b.reasons = [...b.reasons, 'follows a chapter title on the same page'];
@@ -323,8 +331,8 @@ function applyStructuralPasses(blocks: ManuscriptBlock[], warnings: string[]): v
   );
   if (lowConfidence.length > 0) {
     warnings.push(
-      `${lowConfidence.length} paragraph(s) were classified with low confidence. They are ` +
-        'marked "needs review" in the structure list.',
+      `${lowConfidence.length} paragraph${lowConfidence.length === 1 ? ' needs' : 's need'} a quick review. ` +
+        `${lowConfidence.length === 1 ? 'It is' : 'They are'} marked "check this" in the chapter and heading list.`,
     );
   }
 }

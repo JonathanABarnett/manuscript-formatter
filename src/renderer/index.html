@@ -13,8 +13,8 @@
     <header class="masthead">
       <h1>Manuscript Formatter</h1>
       <p>
-        Give it a book that already looks the way you want, add your manuscript, and get your words
-        back in that book&rsquo;s design &mdash; ready to upload.
+        Start with a KDP template or a book whose layout you like, add your manuscript, and get a new
+        Word file that is most of the way formatted. Give it one final check before uploading to KDP.
       </p>
     </header>
 
@@ -26,7 +26,8 @@
             <h3>The design you want to copy</h3>
             <p class="picker-hint">
               A Word file that is already laid out the way you want &mdash; a KDP interior template,
-              or a book you have formatted before. Only its <em>design</em> is used, never its words.
+              or a book you formatted before. Its page size, fonts, spacing, headers, footers, and
+              page numbers are reused. We will point out any header or footer words you should check.
             </p>
             <div class="dropzone" tabindex="0" role="button">
               <span class="dropzone-label">Drag a Word file here, or click to browse</span>
@@ -37,8 +38,9 @@
           <div class="picker" id="picker-manuscript" data-kind="manuscript">
             <h3>Your manuscript</h3>
             <p class="picker-hint">
-              The Word file with your actual book in it. Every word is copied across exactly as you
-              wrote it &mdash; nothing is reworded, reordered or cut.
+              The Word file containing your book. Your writing is moved into the chosen layout;
+              the app does not rewrite your story. A few optional cleanup choices can change spaces
+              or punctuation, and they are off unless you choose them.
             </p>
             <div class="dropzone" tabindex="0" role="button">
               <span class="dropzone-label">Drag a Word file here, or click to browse</span>
@@ -56,11 +58,13 @@
       <section class="step" id="step-review" aria-labelledby="h-review" hidden>
         <h2 id="h-review"><span class="step-number">2</span> Check it over</h2>
         <p class="step-intro">
-          Nothing has been changed yet. Look through the pages below, fix anything that looks wrong,
-          then move on to step&nbsp;3.
+          Nothing has been changed yet. Check the notes and sample pages below, fix anything that
+          looks wrong, then move on to step&nbsp;3.
         </p>
 
         <div class="review-grid">
+          <div class="panel panel-wide review-warnings" id="review-warnings" hidden></div>
+
           <div class="panel panel-wide">
             <div class="panel-head">
               <h3>How your book will look</h3>
@@ -80,36 +84,42 @@
               </div>
             </div>
             <p class="panel-hint">
-              These are your own words, drawn at your book&rsquo;s real page size using the design
-              you picked. Change anything here and the page redraws straight away.
+              These samples use your words, page size, margins, fonts, and spacing. They are a guide,
+              not an exact Word preview: page breaks, line wrapping, pictures, headers, footers, and
+              page numbers can look different in the finished file. Always review it in Word.
             </p>
             <div class="previews" id="previews"></div>
           </div>
 
           <div class="panel">
             <h3>Your book&rsquo;s design</h3>
-            <p class="panel-hint">What was found in the design file. Hover any label to see what it means.</p>
+            <p class="panel-hint">What was found in the design file. Hover or focus a label for an explanation.</p>
             <dl class="facts" id="template-facts"></dl>
           </div>
 
           <div class="panel">
             <h3>Adjustments</h3>
-            <p class="panel-hint">Sensible choices are already made for you. Change any you like.</p>
+            <p class="panel-hint">Recommended choices are already selected. Change only what your book needs.</p>
             <div class="options" id="options"></div>
           </div>
 
-          <div class="panel panel-wide">
-            <div class="panel-head">
-              <h3>Every part of your book</h3>
-              <button type="button" class="linkish" id="reset-roles" hidden>
-                Undo my changes
-              </button>
-            </div>
-            <p class="panel-hint">
-              The full list of what was recognised. Use it to fix a chapter that was missed, or a
-              line that was turned into a heading by mistake.
-            </p>
-            <div class="style-map" id="style-map"></div>
+          <div class="panel panel-wide advanced-panel">
+            <details id="advanced-formatting">
+              <summary>Advanced: change which design style is used for each book part</summary>
+              <div class="advanced-content">
+                <div class="panel-head">
+                  <h3>Formatting used for each part</h3>
+                  <button type="button" class="linkish" id="reset-roles" hidden>
+                    Reset these choices
+                  </button>
+                </div>
+                <p class="panel-hint">
+                  You normally do not need to change these. Use them only if a chapter title,
+                  paragraph, scene break, or other part has the wrong look in the sample pages.
+                </p>
+                <div class="style-map" id="style-map"></div>
+              </div>
+            </details>
           </div>
 
           <div class="panel panel-wide">
@@ -138,7 +148,8 @@
           <button type="button" class="primary" id="run-format">Make my formatted book</button>
         </div>
         <p class="reassurance" id="reassurance">
-          Your two original files are never touched. This creates a brand-new document.
+          The app reads your two files but does not copy or change them. Only the new Word file is
+          saved, at the location shown above. Nothing is uploaded to KDP.
         </p>
         <div class="result" id="result" hidden></div>
       </section>

@@ -1,8 +1,6 @@
 import { twipsToInches } from '../core/ooxml/ns.js';
 import { styleForRole, type RoleStyleMap } from '../core/roles.js';
 import {
-  ROLE_HINTS,
-  ROLE_LABELS,
   type BlockRole,
   type FormatOptions,
   type ManuscriptBlock,
@@ -25,7 +23,6 @@ export interface PreviewContext {
   options: FormatOptions;
   /** Rendered width of a page in CSS pixels; drives every other dimension. */
   pageWidthPx: number;
-  onRoleStyleChange: (role: StyleRole, styleId: string | null) => void;
 }
 
 interface PreviewLine {
@@ -57,8 +54,6 @@ interface SectionSpec {
   key: string;
   label: string;
   caption: string;
-  /** Roles offered for editing on this card. */
-  roles: StyleRole[];
   build: (ctx: PreviewContext) => PreviewLine[] | null;
 }
 
@@ -69,65 +64,56 @@ const SECTIONS: SectionSpec[] = [
   {
     key: 'titlePage',
     label: 'Your title page',
-    caption: 'Everything that comes before the copyright page.',
-    roles: ['frontMatterTitle', 'frontMatter'],
+    caption: 'Your title, author name, and other opening-page text.',
     build: (ctx) => linesFor(ctx, ['frontMatterTitle', 'frontMatter'], 8),
   },
   {
     key: 'copyright',
     label: 'Your copyright page',
-    caption: 'Recognised from the © line, the ISBN, or your rights wording.',
-    roles: ['copyright'],
+    caption: 'Found from the © line, ISBN, edition details, or rights wording.',
     build: (ctx) => linesFor(ctx, ['copyright'], 10),
   },
   {
     key: 'partTitle',
     label: 'A part title',
-    caption: 'Dividers above chapter level, such as "Part One".',
-    roles: ['partTitle'],
+    caption: 'A major divider such as “Part One.”',
     build: (ctx) => linesFor(ctx, ['partTitle'], 2),
   },
   {
     key: 'chapter',
     label: 'How a chapter opens',
     caption:
-      'Including the blank lines that push the title down the page. Adjust those under Adjustments.',
-    roles: ['chapterTitle', 'chapterSubtitle', 'bodyFirst', 'body'],
+      'Includes the space that moves the chapter title down the page.',
     build: buildChapterOpening,
   },
   {
     key: 'body',
     label: 'An ordinary page',
     caption: 'The way most of your book will look.',
-    roles: ['body'],
     build: (ctx) => linesFor(ctx, ['body'], 9),
   },
   {
     key: 'subheading',
     label: 'A heading inside a chapter',
     caption: 'With the paragraphs either side of it, so you can judge the spacing.',
-    roles: ['subheading', 'body'],
     build: (ctx) => aroundRole(ctx, 'subheading'),
   },
   {
     key: 'sceneBreak',
     label: 'A break between scenes',
     caption: 'The mark itself, and the paragraphs either side of it.',
-    roles: ['sceneBreak', 'bodyFirst', 'body'],
     build: (ctx) => aroundRole(ctx, 'sceneBreak'),
   },
   {
     key: 'blockQuote',
-    label: 'A quotation',
-    caption: 'Quotations set in from both margins.',
-    roles: ['blockQuote', 'body'],
+    label: 'An indented quotation',
+    caption: 'A longer quotation set apart from the main text.',
     build: (ctx) => aroundRole(ctx, 'blockQuote'),
   },
   {
     key: 'listItem',
     label: 'A list',
     caption: 'Bulleted and numbered lists.',
-    roles: ['listItem', 'body'],
     build: (ctx) => aroundRole(ctx, 'listItem'),
   },
 ];
@@ -148,7 +134,7 @@ export function renderPreviews(container: HTMLElement, ctx: PreviewContext): voi
     const note = document.createElement('p');
     note.className = 'preview-empty';
     note.textContent =
-      'Nothing to preview yet. Once the manuscript has recognisable sections they appear here.';
+      'Nothing to preview yet. Sample pages will appear when the app can identify parts of the manuscript.';
     container.appendChild(note);
   }
 }
@@ -241,15 +227,6 @@ function card(section: SectionSpec, lines: PreviewLine[], ctx: PreviewContext): 
   head.appendChild(title);
   wrapper.appendChild(head);
 
-  // Style pickers for exactly the roles this page shows.
-  const chips = document.createElement('div');
-  chips.className = 'preview-styles';
-  for (const role of section.roles) {
-    if (!lines.some((line) => line.role === role) && role !== section.roles[0]) continue;
-    chips.appendChild(stylePicker(role, ctx));
-  }
-  wrapper.appendChild(chips);
-
   wrapper.appendChild(page(lines, ctx));
 
   const caption = document.createElement('p');
@@ -257,35 +234,6 @@ function card(section: SectionSpec, lines: PreviewLine[], ctx: PreviewContext): 
   caption.textContent = section.caption;
   wrapper.appendChild(caption);
   return wrapper;
-}
-
-function stylePicker(role: StyleRole, ctx: PreviewContext): HTMLElement {
-  const label = document.createElement('label');
-  const name = document.createElement('span');
-  name.className = 'chip-label';
-  name.textContent = ROLE_LABELS[role];
-  label.appendChild(name);
-
-  const select = document.createElement('select');
-  const auto = document.createElement('option');
-  auto.value = '';
-  auto.textContent = 'Choose for me';
-  select.appendChild(auto);
-  select.title = ROLE_HINTS[role];
-
-  const current = ctx.options.roleStyles[role] ?? ctx.profile.roleStyles[role] ?? '';
-  for (const style of ctx.profile.styles) {
-    const option = document.createElement('option');
-    option.value = style.id;
-    option.textContent = style.name;
-    option.selected = style.id === current;
-    select.appendChild(option);
-  }
-  select.addEventListener('change', () => {
-    ctx.onRoleStyleChange(role, select.value === '' ? null : select.value);
-  });
-  label.appendChild(select);
-  return label;
 }
 
 function page(lines: PreviewLine[], ctx: PreviewContext): HTMLElement {

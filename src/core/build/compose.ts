@@ -109,6 +109,7 @@ export async function composeDocument(
   const stats: FormatStats = {
     paragraphsWritten: 0,
     chapters: 0,
+    parts: 0,
     sceneBreaks: 0,
     tables: 0,
     imagesCopied: 0,
@@ -249,7 +250,8 @@ export async function composeDocument(
         stats.paragraphsWritten++;
       }
     }
-    if (startsChapter) stats.chapters++;
+    if (role === 'chapterTitle') stats.chapters++;
+    else if (role === 'partTitle') stats.parts++;
     if (role === 'sceneBreak') stats.sceneBreaks++;
   }
 

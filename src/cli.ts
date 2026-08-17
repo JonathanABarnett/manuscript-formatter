@@ -152,7 +152,9 @@ async function main(): Promise<number> {
   console.log(`Wrote ${basename(result.outputPath)}`);
   console.log(`  ${result.outputPath}`);
   console.log(
-    `  ${s.paragraphsWritten.toLocaleString()} paragraphs · ${s.chapters} chapters · ` +
+    `  ${s.paragraphsWritten.toLocaleString()} paragraphs · ${s.chapters} chapters` +
+      (s.parts > 0 ? ` · ${s.parts} parts` : '') +
+      ' · ' +
       `${s.sceneBreaks} scene breaks · ${s.wordCount.toLocaleString()} words`,
   );
   if (s.imagesCopied > 0) console.log(`  ${s.imagesCopied} images copied`);
@@ -187,7 +189,9 @@ function printPlan(
   console.log(`\nManuscript: ${analysis.fileName}`);
   console.log(
     `  ${analysis.wordCount.toLocaleString()} words · ${analysis.paragraphCount} paragraphs · ` +
-      `${analysis.chapterCount} chapters · ${analysis.sceneBreakCount} scene breaks`,
+      `${analysis.chapterCount} chapters` +
+        (analysis.partCount > 0 ? ` · ${analysis.partCount} parts` : '') +
+        ` · ${analysis.sceneBreakCount} scene breaks`,
   );
   const warnings = [...profile.warnings, ...analysis.warnings];
   if (warnings.length > 0) {

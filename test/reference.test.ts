@@ -41,7 +41,7 @@ describe('reference analysis', () => {
     expect(profile.roleStyles.blockQuote).toBe('BlockQuote');
     expect(profile.roleStyles.frontMatterTitle).toBe('BookTitle');
     expect(profile.roleStyles.subheading).toBe('Subhead');
-    expect(profile.roleEvidence.body).toMatch(/prose paragraph/);
+    expect(profile.roleEvidence.body).toMatch(/regular paragraphs/);
   });
 
   it('detects chapter pagination and the no-indent opening paragraph', async () => {
@@ -54,6 +54,20 @@ describe('reference analysis', () => {
     expect(profile.bodyFirstLineIndentTwips).toBe(288);
     expect(profile.bodyFontName).toBe('Garamond');
     expect(profile.bodyFontSizePt).toBe(11);
+  });
+
+  it('shows words inherited from template headers and footers', async () => {
+    const path = await writeDocx(join(dir, 'running-heads.docx'), {
+      ...BOOK_TEMPLATE,
+      headerText: 'OLD BOOK TITLE',
+      footerText: 'Old Author Name',
+    });
+    const { profile } = await loadReference(path);
+
+    expect(profile.hasHeaders).toBe(true);
+    expect(profile.hasFooters).toBe(true);
+    expect(profile.headerFooterText).toEqual(['OLD BOOK TITLE', 'Old Author Name']);
+    expect(profile.warnings.some((warning) => /headers or footers/.test(warning))).toBe(true);
   });
 
   it('detects recto chapter openings from an odd-page section break', async () => {
@@ -69,7 +83,7 @@ describe('reference analysis', () => {
 
     expect(profile.chapterStartsOnOddPage).toBe(true);
     expect(profile.sectionCount).toBe(2);
-    expect(profile.warnings.some((w) => /2 sections/.test(w))).toBe(true);
+    expect(profile.warnings.some((w) => /2 different page-layout sections/.test(w))).toBe(true);
   });
 
   it('uses the next-style chain to break a tie between prose styles', async () => {
@@ -100,7 +114,7 @@ describe('reference analysis', () => {
 
     expect(profile.roleStyles.body).toBe('BodyText');
     expect(profile.roleStyles.chapterTitle).toBe('ChapterTitle');
-    expect(profile.warnings.some((w) => /almost no text/.test(w))).toBe(true);
+    expect(profile.warnings.some((w) => /very little sample text/.test(w))).toBe(true);
   });
 
   it('rejects files that are not Word documents', async () => {
