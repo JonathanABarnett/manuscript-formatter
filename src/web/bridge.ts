@@ -1,0 +1,167 @@
+import {
+  analyzeDocuments,
+  analyzeManuscript,
+  analyzeReference,
+  formatToBuffer,
+  suggestOutputName,
+  type LoadedManuscript,
+  type LoadedReference,
+} from '../core/format.js';
+import type {
+  AnalyzePayload,
+  FormatPayload,
+  FormatterApi,
+  Outcome,
+} from '../shared/ipc.js';
+import type { AnalysisResult } from '../core/format.js';
+import type { DocxInput, FormatResult } from '../core/types.js';
+
+/**
+ * The browser implementation of the app's bridge. The engine runs in the page,
+ * so a manuscript is never uploaded anywhere — the whole conversion happens on
+ * the reader's own machine, and the result is handed back as a download.
+ *
+ * Files are held in memory and referenced by name, which stands in for the
+ * absolute path the desktop build passes around.
+ */
+
+const files = new Map<string, File>();
+const parsedReferences = new Map<string, LoadedReference>();
+const parsedManuscripts = new Map<string, LoadedManuscript>();
+let lastOutput: { fileName: string; blob: Blob } | null = null;
+
+/** Register a file and return the key the UI will use to refer to it. */
+export function remember(file: File): string {
+  // Distinguish same-named files picked in sequence, without leaking a path.
+  let key = file.name;
+  let counter = 2;
+  while (files.has(key) && files.get(key) !== file) {
+    key = `${file.name} (${counter++})`;
+  }
+  files.set(key, file);
+  return key;
+}
+
+async function read(key: string): Promise<DocxInput> {
+  const file = files.get(key);
+  if (!file) throw new Error(`"${key}" is no longer available. Choose the file again.`);
+  const data = new Uint8Array(await file.arrayBuffer());
+  return { data, name: file.name };
+}
+
+/** Open the system file picker and return the chosen file's key. */
+function choose(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept =
+      '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    // `cancel` is not universally supported, so also settle on window focus.
+    let settled = false;
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      resolve(value);
+    };
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      finish(file ? remember(file) : null);
+    });
+    input.addEventListener('cancel', () => finish(null));
+    window.addEventListener(
+      'focus',
+      () => window.setTimeout(() => finish(null), 400),
+      { once: true },
+    );
+    input.click();
+  });
+}
+
+async function attempt<T>(work: () => Promise<T>): Promise<Outcome<T>> {
+  try {
+    return { ok: true, value: await work() };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export const webBridge: FormatterApi = {
+  platform: 'web',
+
+  pickDocx: () => choose(),
+
+  // The browser names the download; there is no folder to choose.
+  pickOutput: async (defaultPath) => defaultPath,
+
+  suggestOutput: async (manuscriptKey) => suggestOutputName(manuscriptKey),
+
+  analyze: (payload: AnalyzePayload) =>
+    attempt<AnalysisResult>(async () => {
+      const [reference, manuscript] = await Promise.all([
+        read(payload.referencePath),
+        read(payload.manuscriptPath),
+      ]);
+      // Parse once here and keep it, so Format does not re-read both files.
+      const [loadedReference, loadedManuscript] = await Promise.all([
+        analyzeReference(reference),
+        analyzeManuscript(manuscript),
+      ]);
+      parsedReferences.clear();
+      parsedManuscripts.clear();
+      parsedReferences.set(payload.referencePath, loadedReference);
+      parsedManuscripts.set(payload.manuscriptPath, loadedManuscript);
+
+      const { suggestedOptions } = await analyzeDocuments(reference, manuscript);
+      return {
+        profile: loadedReference.profile,
+        analysis: loadedManuscript.analysis,
+        suggestedOptions,
+      };
+    }),
+
+  format: (payload: FormatPayload) =>
+    attempt<FormatResult>(async () => {
+      const reference =
+        parsedReferences.get(payload.referencePath) ?? (await read(payload.referencePath));
+      const manuscript =
+        parsedManuscripts.get(payload.manuscriptPath) ?? (await read(payload.manuscriptPath));
+
+      const composed = await formatToBuffer({
+        reference,
+        manuscript,
+        options: payload.options,
+      });
+
+      const fileName = payload.outputPath || composed.fileName;
+      lastOutput = {
+        fileName,
+        blob: new Blob([composed.data.slice().buffer as ArrayBuffer], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }),
+      };
+      return { outputPath: fileName, stats: composed.stats, warnings: composed.warnings };
+    }),
+
+  reveal: async () => {
+    /* No folder to reveal in a browser. The UI hides this action. */
+  },
+
+  open: async () => {
+    if (!lastOutput) return;
+    const url = URL.createObjectURL(lastOutput.blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = lastOutput.fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoke once the download has had a chance to start.
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  },
+
+  pathForFile: (file) => remember(file),
+};

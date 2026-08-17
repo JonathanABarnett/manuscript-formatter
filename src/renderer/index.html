@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <title>Manuscript Formatter</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <h1>Manuscript Formatter</h1>
+      <p>
+        Give it a book that already looks the way you want, add your manuscript, and get your words
+        back in that book&rsquo;s design &mdash; ready to upload.
+      </p>
+    </header>
+
+    <main>
+      <section class="step" id="step-files" aria-labelledby="h-files">
+        <h2 id="h-files"><span class="step-number">1</span> Pick your two Word files</h2>
+        <div class="pickers">
+          <div class="picker" id="picker-reference" data-kind="reference">
+            <h3>The design you want to copy</h3>
+            <p class="picker-hint">
+              A Word file that is already laid out the way you want &mdash; a KDP interior template,
+              or a book you have formatted before. Only its <em>design</em> is used, never its words.
+            </p>
+            <div class="dropzone" tabindex="0" role="button">
+              <span class="dropzone-label">Drag a Word file here, or click to browse</span>
+              <span class="dropzone-file" hidden></span>
+            </div>
+          </div>
+
+          <div class="picker" id="picker-manuscript" data-kind="manuscript">
+            <h3>Your manuscript</h3>
+            <p class="picker-hint">
+              The Word file with your actual book in it. Every word is copied across exactly as you
+              wrote it &mdash; nothing is reworded, reordered or cut.
+            </p>
+            <div class="dropzone" tabindex="0" role="button">
+              <span class="dropzone-label">Drag a Word file here, or click to browse</span>
+              <span class="dropzone-file" hidden></span>
+            </div>
+          </div>
+        </div>
+        <p class="picker-note">
+          Both files need to be Word <strong>.docx</strong> files. If yours is an older .doc, or a
+          Pages or Google Docs file, open it and choose <em>Save as &rarr; Word document</em> first.
+        </p>
+        <p class="status" id="analyze-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="step" id="step-review" aria-labelledby="h-review" hidden>
+        <h2 id="h-review"><span class="step-number">2</span> Check it over</h2>
+        <p class="step-intro">
+          Nothing has been changed yet. Look through the pages below, fix anything that looks wrong,
+          then move on to step&nbsp;3.
+        </p>
+
+        <div class="review-grid">
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <h3>How your book will look</h3>
+              <div class="preview-controls">
+                <label class="toggle" for="preview-zoom">
+                  <span>Page size</span>
+                  <input
+                    type="range"
+                    id="preview-zoom"
+                    min="300"
+                    max="620"
+                    step="20"
+                    value="380"
+                    aria-label="How large to draw the preview pages"
+                  />
+                </label>
+              </div>
+            </div>
+            <p class="panel-hint">
+              These are your own words, drawn at your book&rsquo;s real page size using the design
+              you picked. Change anything here and the page redraws straight away.
+            </p>
+            <div class="previews" id="previews"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Your book&rsquo;s design</h3>
+            <p class="panel-hint">What was found in the design file. Hover any label to see what it means.</p>
+            <dl class="facts" id="template-facts"></dl>
+          </div>
+
+          <div class="panel">
+            <h3>Adjustments</h3>
+            <p class="panel-hint">Sensible choices are already made for you. Change any you like.</p>
+            <div class="options" id="options"></div>
+          </div>
+
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <h3>Every part of your book</h3>
+              <button type="button" class="linkish" id="reset-roles" hidden>
+                Undo my changes
+              </button>
+            </div>
+            <p class="panel-hint">
+              The full list of what was recognised. Use it to fix a chapter that was missed, or a
+              line that was turned into a heading by mistake.
+            </p>
+            <div class="style-map" id="style-map"></div>
+          </div>
+
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <h3>Your chapters and headings</h3>
+              <label class="toggle">
+                <input type="checkbox" id="show-all-blocks" />
+                <span>Show every paragraph</span>
+              </label>
+            </div>
+            <div class="summary" id="structure-summary"></div>
+            <p class="panel-hint" id="structure-hint"></p>
+            <div class="block-list" id="structure-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="step" id="step-output" aria-labelledby="h-output" hidden>
+        <h2 id="h-output"><span class="step-number">3</span> Make the book</h2>
+        <div class="output-row">
+          <div class="output-path">
+            <span class="label" id="output-path-label">Will be saved as</span>
+            <span class="path" id="output-path"></span>
+          </div>
+          <button type="button" class="secondary" id="change-output">Change&hellip;</button>
+          <button type="button" class="primary" id="run-format">Make my formatted book</button>
+        </div>
+        <p class="reassurance" id="reassurance">
+          Your two original files are never touched. This creates a brand-new document.
+        </p>
+        <div class="result" id="result" hidden></div>
+      </section>
+    </main>
+
+    <div class="banner" id="error-banner" role="alert" hidden></div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

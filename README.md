@@ -1,0 +1,217 @@
+# Manuscript Formatter
+
+A local desktop app that takes a correctly formatted Word document as a layout reference, takes a
+separate manuscript, and writes a new `.docx` whose **words come from the manuscript** and whose
+**book layout comes from the reference**.
+
+Neither input file is ever modified.
+
+```
+Select template  →  Select manuscript  →  Review what was detected  →  Format  →  Print-ready .docx
+```
+
+## Why it works the way it does
+
+Rather than rebuilding a document from scratch and trying to re-create the reference's settings, the
+app **starts from a copy of the reference package** and replaces its body with the manuscript's
+content. Everything that makes a book interior look right — page size, mirrored margins, gutter,
+running heads, footers, page-number fields, style definitions, theme fonts, footnote layout — comes
+across natively because it was never taken apart.
+
+The manuscript contributes its text, its paragraph structure, and its *semantic* character
+formatting (italic, bold, small caps, superscript). Its *visual* formatting — fonts, sizes, colours,
+line spacing, manual indents — is deliberately discarded, because that is what the reference is for.
+
+## Three ways to run it
+
+The engine is platform-neutral — it never touches the filesystem — so the same
+analysis and composition code backs all three.
+
+### Desktop app
+
+```bash
+npm install
+npm start
+```
+
+For development, `npm run watch` rebuilds on change.
+
+### Windows installer / portable .exe
+
+```bash
+npm run dist
+```
+
+Writes to `release/`: a portable single-file `.exe` that runs with no install, and an NSIS
+installer. `npm run dist` builds unsigned, so Windows SmartScreen will warn on first run until you
+sign it with a code-signing certificate.
+
+> On Windows, electron-builder's first run may fail extracting its signing toolchain with
+> `Cannot create symbolic link`. It only trips on macOS `.dylib` symlinks a Windows build never
+> reads. Either enable Developer Mode, or pre-extract the archive without them:
+>
+> ```bash
+> node_modules/7zip-bin/win/x64/7za.exe x "$LOCALAPPDATA/electron-builder/Cache/winCodeSign/winCodeSign-2.6.0.7z" -o"$LOCALAPPDATA/electron-builder/Cache/winCodeSign/winCodeSign-2.6.0" "-xr!darwin"
+> ```
+
+### Web
+
+```bash
+npm run serve:web
+```
+
+The whole engine is compiled into a 254 KB bundle that runs **in the page**. There is no server and
+no upload: your manuscript is read, analysed and rebuilt on your own machine, and the finished
+document arrives as a download. The page ships with `connect-src 'none'`, so it cannot make network
+requests at all — for a tool whose input is an unpublished book, that is the point.
+
+Deploying to Vercel needs no configuration beyond the included `vercel.json`: it is a static site,
+so there are no function size limits, no execution timeouts, and nothing to pay for at runtime. See
+[DEPLOYING.md](DEPLOYING.md) for the walkthrough.
+
+### Command line
+
+```bash
+node dist/cli.cjs template.docx manuscript.docx "My Book (formatted).docx"
+```
+
+Inspect the plan without writing anything:
+
+```bash
+node dist/cli.cjs template.docx manuscript.docx --plan
+```
+
+Run `node dist/cli.cjs --help` for the full option list.
+
+## What it detects
+
+**From the reference**
+
+| | |
+| --- | --- |
+| Page setup | Trim size (named where recognised: Digest, Trade, A5, US Trade…), margins, gutter, mirrored margins, section count |
+| Styles | Which style carries body prose, which opens a chapter, which is the no-indent first paragraph, scene breaks, block quotes, subheadings, list items, front-matter styles |
+| Behaviour | Whether chapters start on a new page or a right-hand (recto) page, whether opening paragraphs are flush left |
+| Carried over untouched | Headers, footers, page-number fields, theme, fonts, footnote styles |
+
+Body-style detection uses the reference's actual prose usage, and breaks ties using the `w:next`
+style chain — the idiom Word templates use to say "after a First Paragraph comes a Body Text".
+
+**From the manuscript**
+
+Every paragraph is classified as a chapter title, part title, chapter subtitle, subheading, opening
+paragraph, body text, block quote, list item, scene break, front matter, or blank. The classifier
+trusts explicit Word heading styles first, then falls back to weighted text evidence — leading words
+("Chapter", "Prologue"), bare numbers, page breaks, centring, boldness, line length, sentence
+punctuation — so a manuscript typed with no styles at all still comes out structured.
+
+Anything classified with low confidence is flagged **needs review** in the app, and every paragraph's
+role can be overridden by hand before formatting.
+
+## Previewing before you convert
+
+The review screen draws a proof of every kind of page the formatter will produce — title page,
+copyright page, part title, chapter opening, body page, subheading, scene break, block quote and
+list — laid out at the template's real trim size, in the template's own fonts, using your own text.
+
+Each proof carries the style pickers for the roles it shows. Change one and the page redraws
+immediately; change a paragraph's role in the structure list and the proofs follow. Nothing is
+written until you press Format.
+
+The chapter-opening proof includes the blank paragraphs a template uses to sink a chapter title
+partway down the page, because that is a large part of why a formatted chapter looks right.
+
+These are layout proofs, not a Word rendering engine: line breaks and hyphenation will differ from
+Word, and how much text fits a page is approximate. Page proportions, margins, type sizes, indents,
+alignment, line spacing and the chapter sink are all read from the template and are exact.
+
+## What survives the conversion
+
+- **Text** — copied verbatim. Nothing is rewritten, reordered, or summarised.
+- **Emphasis** — italic, bold, small caps, strikethrough, superscript and subscript.
+- **Footnotes and endnotes** — merged into the output, renumbered past anything the reference
+  already had, with their styles remapped onto the reference's equivalents.
+- **Images** — copied into the output package with fresh relationships and content types.
+- **Tables** — carried across unchanged (their width is worth checking against a smaller trim size).
+- **Numbered and bulleted lists** — list definitions are merged with offset ids so numbering keeps
+  running correctly.
+- **Hyperlinks and bookmarks.**
+- **Tracked changes** — insertions are accepted, deletions dropped, comments removed.
+
+## Options
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| Start each chapter | from the reference | New page, right-hand page (inserts odd-page section breaks), or straight on |
+| No indent on opening paragraphs | from the reference | First paragraph after a chapter title or scene break sits flush left |
+| Drop blank paragraphs | on | Spacing comes from the template's styles instead of empty lines |
+| Strip tabbed indents | on | Removes tabs and spaces typed at paragraph starts |
+| Keep italics and bold | on | Emphasis inside the text is preserved |
+| Include front matter | on | Everything before the first chapter |
+| Scene break ornament | keep as written | Replaces `#` or `***` with the template's ornament |
+| Curly quotes and proper dashes | **off** | Converts `"` to `“ ”`, `--` to an em dash, `...` to an ellipsis |
+| Collapse double spaces | **off** | Two spaces after a full stop become one |
+
+The last two change characters in the text, so they are off by default.
+
+## Page numbering across sections
+
+When chapters open on a right-hand page, each chapter becomes its own section cloned from the
+reference's. Only the first of those sections keeps the reference's `pgNumType` restart value — the
+rest continue the sequence, so page numbers run correctly through the book instead of resetting at
+every chapter.
+
+## Project layout
+
+```
+src/
+  core/              The engine. Platform-neutral: no Electron, no filesystem
+    ooxml/           Zip container, relationships, XML helpers
+    analyze/         Reference profiling, manuscript parsing, classification
+    build/           Composition, resource migration, numbering, notes
+    format.ts        Public API: analyzeDocuments(), formatToBuffer()
+    roles.ts         Role -> style resolution, shared by composer and preview
+    platform/node.ts The only file importing node: — paths in, files out
+  main/              Electron main process and preload bridge
+  renderer/          The UI (no framework), shared by both shells
+    previews.ts      Page proofs drawn from the template's own styles
+  web/               Browser bridge — the same API, backed by the in-page engine
+  shared/ipc.ts      The contract the UI talks to
+  cli.ts             Headless entry point
+test/                Vitest suites over generated .docx fixtures
+```
+
+The UI talks to one small interface (`FormatterApi`) regardless of where it runs. Electron
+implements it over IPC; the browser implements it against the in-page engine. That is why the same
+renderer serves both, and why the web build carries no `node:` imports — verifiable with
+`grep 'node:' dist/web/app.js`, which returns nothing.
+
+In the desktop app the renderer runs with `contextIsolation` on, `nodeIntegration` off, and a strict
+CSP, reaching the engine only through explicit typed channels.
+
+## Tests
+
+```bash
+npm test
+npm run typecheck
+```
+
+41 tests build real `.docx` fixtures on disk, run the full pipeline, and read the output package
+back — asserting on page geometry, style mapping, text fidelity, section breaks, resource migration
+and package validity.
+
+## Packaging
+
+```bash
+npm run dist
+```
+
+Produces an installer via `electron-builder` (NSIS on Windows, DMG on macOS, AppImage on Linux).
+
+## Known limits
+
+- Input must be `.docx`. Older `.doc`, `.rtf` and `.odt` files need saving as `.docx` in Word first.
+- Embedded charts and OLE objects are dropped rather than risk a broken package; a warning names
+  each one.
+- Tables are copied at their original width and are not re-fitted to a narrower trim size.
+- Smart-quote conversion resolves quotation nesting within a paragraph, not across paragraphs.

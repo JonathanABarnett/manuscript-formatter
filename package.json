@@ -1,0 +1,64 @@
+{
+  "name": "manuscript-formatter",
+  "productName": "Manuscript Formatter",
+  "version": "0.1.0",
+  "description": "Apply the layout and formatting of a reference .docx to a manuscript .docx, producing a print-ready Word document.",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:web": "node build.mjs --web-only",
+    "watch": "node build.mjs --watch",
+    "start": "npm run build && electron .",
+    "serve:web": "npm run build:web && npx --yes serve dist/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "cli": "node dist/cli.cjs",
+    "dist": "npm run build && electron-builder"
+  },
+  "bin": {
+    "manuscript-formatter": "dist/cli.cjs"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.8",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.manuscriptformatter.app",
+    "productName": "Manuscript Formatter",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "win": {
+      "target": [
+        { "target": "zip", "arch": ["x64"] },
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Manuscript Formatter ${version} Setup.exe",
+      "shortcutName": "Manuscript Formatter"
+    },
+    "mac": { "target": "dmg", "icon": "build/icon.png", "category": "public.app-category.productivity" },
+    "linux": { "target": "AppImage", "icon": "build/icon.png", "category": "Office" }
+  }
+}
