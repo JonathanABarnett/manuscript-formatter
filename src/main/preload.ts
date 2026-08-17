@@ -8,6 +8,7 @@ import { CHANNEL, type AnalyzePayload, type FormatPayload, type FormatterApi } f
 const api: FormatterApi = {
   platform: 'desktop',
   pickDocx: (kind) => ipcRenderer.invoke(CHANNEL.pickDocx, kind),
+  useBuiltIn: (request) => ipcRenderer.invoke(CHANNEL.useBuiltIn, request),
   pickOutput: (defaultPath) => ipcRenderer.invoke(CHANNEL.pickOutput, defaultPath),
   suggestOutput: (manuscriptPath) => ipcRenderer.invoke(CHANNEL.suggestOutput, manuscriptPath),
   analyze: (payload: AnalyzePayload) => ipcRenderer.invoke(CHANNEL.analyze, payload),

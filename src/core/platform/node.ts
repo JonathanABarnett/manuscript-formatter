@@ -74,6 +74,20 @@ export async function formatManuscript(request: FormatRequest): Promise<FormatRe
   return { outputPath, stats: composed.stats, warnings: composed.warnings };
 }
 
+/**
+ * Write a generated design or sample book into `dir` and return its path, so
+ * the desktop flow can treat it exactly like a file the author picked.
+ */
+export async function writeBuiltIn(
+  dir: string,
+  fileName: string,
+  data: Uint8Array,
+): Promise<string> {
+  const path = join(dir, fileName);
+  await writeFile(path, data);
+  return path;
+}
+
 /** `Novel.docx` -> `Novel (formatted).docx`, then ` 2`, ` 3`, ... if taken. */
 export async function suggestOutputPath(manuscriptPath: string): Promise<string> {
   const dir = dirname(manuscriptPath);

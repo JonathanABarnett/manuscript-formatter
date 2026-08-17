@@ -4,6 +4,7 @@ import type { FormatOptions, FormatResult } from '../core/types.js';
 /** Channel names shared by the main process and the preload bridge. */
 export const CHANNEL = {
   pickDocx: 'mf:pick-docx',
+  useBuiltIn: 'mf:use-built-in',
   pickOutput: 'mf:pick-output',
   suggestOutput: 'mf:suggest-output',
   analyze: 'mf:analyze',
@@ -24,6 +25,11 @@ export interface FormatPayload {
   options: FormatOptions;
 }
 
+/** Ask for a generated design, or for the sample book to try the app with. */
+export type BuiltInRequest =
+  | { kind: 'template'; trimId: string; lookId: string }
+  | { kind: 'sample' };
+
 /** Errors are values here: the UI shows them instead of the app crashing. */
 export type Outcome<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -36,6 +42,11 @@ export interface FormatterApi {
   /** Which shell is hosting the UI. Changes only how the result is delivered. */
   platform: 'desktop' | 'web';
   pickDocx(kind: 'reference' | 'manuscript'): Promise<string | null>;
+  /**
+   * Build one of the app's own book designs, or the sample manuscript, and
+   * return a handle the rest of the flow treats exactly like a chosen file.
+   */
+  useBuiltIn(request: BuiltInRequest): Promise<string>;
   pickOutput(defaultPath: string): Promise<string | null>;
   suggestOutput(manuscriptPath: string): Promise<string>;
   analyze(payload: AnalyzePayload): Promise<Outcome<AnalysisResult>>;

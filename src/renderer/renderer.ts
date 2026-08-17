@@ -12,9 +12,14 @@ import {
   type StyleRole,
 } from '../core/types.js';
 import type { AnalysisResult } from '../shared/ipc.js';
+import { BOOK_LOOKS, TRIM_SIZES } from '../core/templates/design.js';
 import { renderPreviews } from './previews.js';
 
 interface State {
+  /** Quick Start builds a design; "own" uses a file the author supplies. */
+  mode: 'quick' | 'own';
+  trimId: string;
+  lookId: string;
   referencePath: string | null;
   manuscriptPath: string | null;
   analysis: AnalysisResult | null;
@@ -28,6 +33,9 @@ interface State {
 }
 
 const state: State = {
+  mode: 'quick',
+  trimId: TRIM_SIZES.find((t) => t.recommended)?.id ?? TRIM_SIZES[0].id,
+  lookId: BOOK_LOOKS[0].id,
   referencePath: null,
   manuscriptPath: null,
   analysis: null,
@@ -137,11 +145,167 @@ function showError(message: string | null): void {
   }, 9000);
 }
 
+// --- step 1: quick start ----------------------------------------------------
+
+/** Quick Start builds a design; "use my own" takes one the author supplies. */
+function setMode(mode: 'quick' | 'own'): void {
+  state.mode = mode;
+  const quick = mode === 'quick';
+  $('#quick-start').hidden = !quick;
+  $('#own-design').hidden = quick;
+  $('#mode-quick').setAttribute('aria-selected', String(quick));
+  $('#mode-own').setAttribute('aria-selected', String(!quick));
+  $('#mode-quick').classList.toggle('active', quick);
+  $('#mode-own').classList.toggle('active', !quick);
+  analysisVersion++;
+
+  // The two modes source the design differently, so a half-made choice from
+  // one must not leak into the other.
+  state.referencePath = null;
+  state.analysis = null;
+  state.result = null;
+  $('#step-review').hidden = true;
+  $('#step-output').hidden = true;
+  $('#analyze-status').textContent = '';
+
+  if (quick) void applyQuickTemplate();
+}
+
+function renderQuickChoices(): void {
+  const trims = $('#trim-choices');
+  replace(
+    trims,
+    ...TRIM_SIZES.map((trim) =>
+      choiceCard({
+        name: 'trim',
+        value: trim.id,
+        title: trim.label,
+        note: trim.note,
+        badge: trim.recommended ? 'Recommended' : undefined,
+        checked: state.trimId === trim.id,
+        onPick: () => {
+          state.trimId = trim.id;
+          void applyQuickTemplate();
+        },
+      }),
+    ),
+  );
+
+  const looks = $('#look-choices');
+  replace(
+    looks,
+    ...BOOK_LOOKS.map((look) =>
+      choiceCard({
+        name: 'look',
+        value: look.id,
+        title: look.label,
+        note: look.note,
+        checked: state.lookId === look.id,
+        onPick: () => {
+          state.lookId = look.id;
+          void applyQuickTemplate();
+        },
+      }),
+    ),
+  );
+}
+
+interface ChoiceOptions {
+  name: string;
+  value: string;
+  title: string;
+  note: string;
+  badge?: string;
+  checked: boolean;
+  onPick: () => void;
+}
+
+function choiceCard(o: ChoiceOptions): HTMLElement {
+  const input = el('input', { type: 'radio', name: o.name, value: o.value, checked: o.checked });
+  input.addEventListener('change', () => {
+    if (input.checked) o.onPick();
+  });
+  return el(
+    'label',
+    { class: `choice${o.checked ? ' chosen' : ''}` },
+    input,
+    el(
+      'span',
+      { class: 'choice-body' },
+      el(
+        'span',
+        { class: 'choice-title' },
+        o.title,
+        o.badge ? el('span', { class: 'choice-badge' }, o.badge) : null,
+      ),
+      el('span', { class: 'choice-note' }, o.note),
+    ),
+  );
+}
+
+/**
+ * Build the chosen design and use it as the reference. Runs whenever a size or
+ * look changes, so the preview always reflects the current pick.
+ */
+async function applyQuickTemplate(): Promise<void> {
+  if (state.mode !== 'quick') return;
+  renderQuickChoices();
+  try {
+    state.referencePath = await window.formatter.useBuiltIn({
+      kind: 'template',
+      trimId: state.trimId,
+      lookId: state.lookId,
+    });
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err));
+    return;
+  }
+  if (state.manuscriptPath) await runAnalysis();
+}
+
+/** Load the bundled sample book so the whole flow can be tried risk-free. */
+async function useSampleBook(): Promise<void> {
+  try {
+    state.manuscriptPath = await window.formatter.useBuiltIn({ kind: 'sample' });
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err));
+    return;
+  }
+  markChosen('manuscript', state.manuscriptPath);
+  state.outputPath = null;
+  if (!state.referencePath) await applyQuickTemplate();
+  else await runAnalysis();
+}
+
+function startOver(): void {
+  state.referencePath = null;
+  state.manuscriptPath = null;
+  state.analysis = null;
+  state.result = null;
+  state.outputPath = null;
+  state.options = { ...DEFAULT_FORMAT_OPTIONS };
+  for (const zone of document.querySelectorAll<HTMLElement>('.dropzone')) {
+    zone.classList.remove('chosen');
+    const label = zone.querySelector<HTMLElement>('.dropzone-label');
+    const file = zone.querySelector<HTMLElement>('.dropzone-file');
+    if (label) label.textContent = 'Drag a Word file here, or click to browse';
+    if (file) {
+      file.textContent = '';
+      file.hidden = true;
+    }
+  }
+  $('#step-review').hidden = true;
+  $('#step-output').hidden = true;
+  $('#result').hidden = true;
+  $('#analyze-status').textContent = '';
+  $('#start-over').hidden = true;
+  setMode('quick');
+  $('#step-files').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // --- step 1: choosing files -------------------------------------------------
 
-function setupPicker(kind: 'reference' | 'manuscript'): void {
-  const picker = $(`#picker-${kind}`);
-  const zone = picker.querySelector<HTMLElement>('.dropzone');
+function setupPicker(kind: 'reference' | 'manuscript', zone: HTMLElement | null): void {
   if (!zone) return;
 
   const choose = async (): Promise<void> => {
@@ -183,6 +347,24 @@ function setupPicker(kind: 'reference' | 'manuscript'): void {
   });
 }
 
+/** Show a chosen file on every dropzone that stands for that slot. */
+function markChosen(kind: 'reference' | 'manuscript', path: string): void {
+  for (const zone of document.querySelectorAll<HTMLElement>(
+    `.dropzone[data-kind="${kind}"], #picker-${kind} .dropzone`,
+  )) {
+    zone.classList.add('chosen');
+    const label = zone.querySelector<HTMLElement>('.dropzone-label');
+    const file = zone.querySelector<HTMLElement>('.dropzone-file');
+    if (label) label.textContent = 'Selected';
+    if (file) {
+      file.textContent = baseName(path);
+      file.hidden = false;
+      file.title = path;
+    }
+  }
+  $('#start-over').hidden = false;
+}
+
 async function setPath(kind: 'reference' | 'manuscript', path: string): Promise<void> {
   analysisVersion++;
   if (kind === 'reference') state.referencePath = path;
@@ -196,16 +378,7 @@ async function setPath(kind: 'reference' | 'manuscript', path: string): Promise<
   $('#step-output').hidden = true;
   $('#result').hidden = true;
 
-  const zone = $(`#picker-${kind}`).querySelector<HTMLElement>('.dropzone');
-  const label = zone?.querySelector<HTMLElement>('.dropzone-label');
-  const file = zone?.querySelector<HTMLElement>('.dropzone-file');
-  zone?.classList.add('chosen');
-  if (label) label.textContent = 'Selected';
-  if (file) {
-    file.textContent = baseName(path);
-    file.hidden = false;
-    file.title = path;
-  }
+  markChosen(kind, path);
 
   if (state.referencePath && state.referencePath === state.manuscriptPath) {
     $('#analyze-status').textContent = 'Choose a different file for the design and the manuscript.';
@@ -877,8 +1050,17 @@ export function init(): void {
       'by the app. The finished Word file is saved only when you choose Download; nothing is sent to KDP.';
   }
 
-  setupPicker('reference');
-  setupPicker('manuscript');
+  setupPicker('reference', document.querySelector('#picker-reference .dropzone'));
+  setupPicker('manuscript', document.querySelector('#picker-manuscript .dropzone'));
+  // Quick Start has its own manuscript dropzone feeding the same slot.
+  setupPicker('manuscript', document.querySelector('#quick-manuscript .dropzone'));
+
+  $('#mode-quick').addEventListener('click', () => setMode('quick'));
+  $('#mode-own').addEventListener('click', () => setMode('own'));
+  $('#try-sample').addEventListener('click', () => void useSampleBook());
+  $('#start-over').addEventListener('click', startOver);
+  // Also builds the default design and marks the tab, so the page opens ready.
+  setMode('quick');
 
   $('#change-output').addEventListener('click', () => void chooseOutput());
   $('#run-format').addEventListener('click', () => void runFormat());

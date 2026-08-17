@@ -1,11 +1,21 @@
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { CHANNEL, type AnalyzePayload, type FormatPayload, type Outcome } from '../shared/ipc.js';
+import {
+  CHANNEL,
+  type AnalyzePayload,
+  type BuiltInRequest,
+  type FormatPayload,
+  type Outcome,
+} from '../shared/ipc.js';
+import { designFileName } from '../core/templates/design.js';
+import { buildSampleManuscript, buildTemplate } from '../core/templates/generate.js';
 import { analyzeManuscript, analyzeReference, suggestOptions } from '../core/format.js';
 import {
   formatManuscript,
   readDocxFile,
   suggestOutputPath,
+  writeBuiltIn,
   type AnalysisResult,
   type LoadedManuscript,
   type LoadedReference,
@@ -92,6 +102,19 @@ function registerHandlers(): void {
       filters: DOCX_FILTER,
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  ipcMain.handle(CHANNEL.useBuiltIn, async (_event, request: BuiltInRequest) => {
+    const dir = join(app.getPath('temp'), 'manuscript-formatter');
+    await mkdir(dir, { recursive: true });
+    if (request.kind === 'sample') {
+      return writeBuiltIn(dir, 'Sample book.docx', await buildSampleManuscript());
+    }
+    return writeBuiltIn(
+      dir,
+      designFileName(request.trimId, request.lookId),
+      await buildTemplate(request.trimId, request.lookId),
+    );
   });
 
   ipcMain.handle(CHANNEL.pickOutput, async (_event, defaultPath: string) => {

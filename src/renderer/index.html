@@ -20,8 +20,52 @@
 
     <main>
       <section class="step" id="step-files" aria-labelledby="h-files">
-        <h2 id="h-files"><span class="step-number">1</span> Pick your two Word files</h2>
-        <div class="pickers">
+        <h2 id="h-files"><span class="step-number">1</span> Start your book</h2>
+
+        <div class="mode-switch" role="tablist" aria-label="How to choose a design">
+          <button type="button" class="mode-tab" id="mode-quick" role="tab" aria-selected="true">
+            <span class="mode-title">Quick start</span>
+            <span class="mode-note">Pick a size and a look. Recommended.</span>
+          </button>
+          <button type="button" class="mode-tab" id="mode-own" role="tab" aria-selected="false">
+            <span class="mode-title">Use my own design</span>
+            <span class="mode-note">You already have a template or a formatted book.</span>
+          </button>
+        </div>
+
+        <div class="quick-start" id="quick-start">
+          <div class="quick-grid">
+            <fieldset class="quick-field">
+              <legend>Book size</legend>
+              <p class="quick-hint">The finished size of the printed paperback.</p>
+              <div class="choice-list" id="trim-choices"></div>
+            </fieldset>
+            <fieldset class="quick-field">
+              <legend>Look</legend>
+              <p class="quick-hint">Fonts, spacing and how chapters open.</p>
+              <div class="choice-list" id="look-choices"></div>
+            </fieldset>
+          </div>
+          <div class="quick-manuscript" id="quick-manuscript">
+            <h3>Your manuscript</h3>
+            <p class="picker-hint">
+              The Word file containing your book. Your writing is moved into the design you chose;
+              the app does not rewrite your story.
+            </p>
+            <div class="dropzone" tabindex="0" role="button" data-kind="manuscript">
+              <span class="dropzone-label">Drag a Word file here, or click to browse</span>
+              <span class="dropzone-file" hidden></span>
+            </div>
+            <p class="quick-or">
+              Not ready to use your own book yet?
+              <button type="button" class="linkish" id="try-sample">
+                Try it with a sample book
+              </button>
+            </p>
+          </div>
+        </div>
+
+        <div class="pickers" id="own-design" hidden>
           <div class="picker" id="picker-reference" data-kind="reference">
             <h3>The design you want to copy</h3>
             <p class="picker-hint">
@@ -49,10 +93,19 @@
           </div>
         </div>
         <p class="picker-note">
-          Both files need to be Word <strong>.docx</strong> files. If yours is an older .doc, or a
-          Pages or Google Docs file, open it and choose <em>Save as &rarr; Word document</em> first.
+          Word <strong>.docx</strong> files only. If yours is an older .doc, or a Pages or Google
+          Docs file, open it and choose <em>Save as &rarr; Word document</em> first.
+        </p>
+        <p class="privacy-note">
+          <strong>Your files stay on this device.</strong> Nothing is uploaded, stored or sent
+          anywhere. The whole conversion happens on your own machine.
         </p>
         <p class="status" id="analyze-status" role="status" aria-live="polite"></p>
+        <p class="start-over-row">
+          <button type="button" class="linkish" id="start-over" hidden>
+            Start over with different files
+          </button>
+        </p>
       </section>
 
       <section class="step" id="step-review" aria-labelledby="h-review" hidden>
