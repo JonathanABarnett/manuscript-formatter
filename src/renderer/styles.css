@@ -976,18 +976,31 @@ input[type="checkbox"] {
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--card);
-  padding: 0.9rem 1rem 1.05rem;
+  padding: 1.05rem 1.1rem 1.15rem;
   margin: 0;
   min-width: 0;
+  box-shadow: var(--shadow-sm);
 }
 
-.quick-field legend {
-  font-size: 0.82rem;
+.quick-legend {
+  margin: 0 0 0.15rem;
+  font-size: 0.76rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.09em;
   color: var(--ink-faint);
-  padding: 0 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.quick-legend::before {
+  content: "";
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--gold);
+  flex: none;
 }
 
 .quick-hint {
@@ -1062,6 +1075,13 @@ input[type="checkbox"] {
   color: var(--ink-soft);
   font-size: 0.8rem;
   line-height: 1.4;
+}
+
+.choice-aside {
+  margin-top: 0.15rem;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .quick-manuscript h3 {

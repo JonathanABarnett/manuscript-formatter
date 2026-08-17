@@ -76,16 +76,18 @@
 
         <div class="quick-start" id="quick-start">
           <div class="quick-grid">
-            <fieldset class="quick-field">
-              <legend>Book size</legend>
+            <!-- A plain group rather than fieldset/legend: a legend is laid
+                 out across the box's border and cannot sit inside it. -->
+            <div class="quick-field" role="group" aria-labelledby="trim-legend">
+              <h3 class="quick-legend" id="trim-legend">Book size</h3>
               <p class="quick-hint">The finished size of the printed paperback.</p>
               <div class="choice-list" id="trim-choices"></div>
-            </fieldset>
-            <fieldset class="quick-field">
-              <legend>Look</legend>
+            </div>
+            <div class="quick-field" role="group" aria-labelledby="look-legend">
+              <h3 class="quick-legend" id="look-legend">Look</h3>
               <p class="quick-hint">Fonts, spacing and how chapters open.</p>
               <div class="choice-list" id="look-choices"></div>
-            </fieldset>
+            </div>
           </div>
           <div class="quick-manuscript" id="quick-manuscript">
             <h3>Your manuscript</h3>

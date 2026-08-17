@@ -1,3 +1,5 @@
+import { estimatePages } from '../pageEstimate.js';
+
 /**
  * The book designs the app can build for itself, so an author who has no
  * template of their own never has to go and find one.
@@ -30,7 +32,7 @@ export const TRIM_SIZES: TrimSize[] = [
   {
     id: '6x9',
     label: '6 × 9 inches',
-    note: 'The most common size for paperbacks. Pick this if you are unsure.',
+    note: 'The usual size for a paperback, and the safest choice if you are unsure.',
     widthIn: 6,
     heightIn: 9,
     recommended: true,
@@ -39,15 +41,16 @@ export const TRIM_SIZES: TrimSize[] = [
   {
     id: '5.5x8.5',
     label: '5.5 × 8.5 inches',
-    note: 'A slightly smaller, chunkier book. Common for novels and memoirs.',
+    note: 'A little smaller in the hand. Common for novels and memoirs.',
     widthIn: 5.5,
     heightIn: 8.5,
     margins: { top: 0.75, bottom: 0.75, outside: 0.6, inside: 0.6 },
   },
   {
     id: '5x8',
+    // Not "pocket sized": a true pocket paperback is 4.25 x 6.87 inches.
     label: '5 × 8 inches',
-    note: 'Pocket sized. Fewer words per page, so the book runs longer.',
+    note: 'The smallest of the three, so the same book runs to the most pages.',
     widthIn: 5,
     heightIn: 8,
     margins: { top: 0.7, bottom: 0.7, outside: 0.55, inside: 0.55 },
@@ -134,6 +137,25 @@ export const BOOK_LOOKS: BookLook[] = [
     sceneMark: '·',
   },
 ];
+
+/**
+ * Roughly how many pages a book of `wordCount` runs to in this size and look.
+ * Uses the same arithmetic as the preflight report, so the figure quoted when
+ * choosing a size matches the one quoted after the book is read.
+ */
+export function estimatePagesForDesign(
+  trim: TrimSize,
+  look: BookLook,
+  wordCount: number,
+): number | null {
+  return estimatePages({
+    textWidthIn: trim.widthIn - trim.margins.inside - trim.margins.outside - GUTTER_IN,
+    textHeightIn: trim.heightIn - trim.margins.top - trim.margins.bottom,
+    fontSizePt: look.bodySizePt,
+    lineSpacing: look.lineSpacing,
+    wordCount,
+  });
+}
 
 export function findTrim(id: string): TrimSize {
   const trim = TRIM_SIZES.find((t) => t.id === id);

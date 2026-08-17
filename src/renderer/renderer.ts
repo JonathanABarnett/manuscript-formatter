@@ -12,7 +12,8 @@ import {
   type StyleRole,
 } from '../core/types.js';
 import type { AnalysisResult } from '../shared/ipc.js';
-import { BOOK_LOOKS, TRIM_SIZES } from '../core/templates/design.js';
+import { BOOK_LOOKS, TRIM_SIZES, estimatePagesForDesign } from '../core/templates/design.js';
+import { TYPICAL_NOVEL_WORDS } from '../core/pageEstimate.js';
 import { renderPreviews } from './previews.js';
 import { renderDetailsForm } from './details.js';
 import { preflight, type CheckLevel, type PreflightReport } from '../core/preflight.js';
@@ -180,23 +181,28 @@ function setMode(mode: 'quick' | 'own'): void {
 }
 
 function renderQuickChoices(): void {
+  const look = BOOK_LOOKS.find((l) => l.id === state.lookId) ?? BOOK_LOOKS[0];
   const trims = $('#trim-choices');
   replace(
     trims,
-    ...TRIM_SIZES.map((trim) =>
-      choiceCard({
+    ...TRIM_SIZES.map((trim) => {
+      // A concrete page count says more than an adjective, and it moves with
+      // the chosen look because the look changes the type size and spacing.
+      const pages = estimatePagesForDesign(trim, look, TYPICAL_NOVEL_WORDS);
+      return choiceCard({
         name: 'trim',
         value: trim.id,
         title: trim.label,
         note: trim.note,
+        aside: pages !== null ? `about ${pages} pages for an 80,000-word novel` : undefined,
         badge: trim.recommended ? 'Recommended' : undefined,
         checked: state.trimId === trim.id,
         onPick: () => {
           state.trimId = trim.id;
           void applyQuickTemplate();
         },
-      }),
-    ),
+      });
+    }),
   );
 
   const looks = $('#look-choices');
@@ -223,6 +229,8 @@ interface ChoiceOptions {
   value: string;
   title: string;
   note: string;
+  /** A measured figure shown under the description, where one applies. */
+  aside?: string;
   badge?: string;
   checked: boolean;
   onPick: () => void;
@@ -247,6 +255,7 @@ function choiceCard(o: ChoiceOptions): HTMLElement {
         o.badge ? el('span', { class: 'choice-badge' }, o.badge) : null,
       ),
       el('span', { class: 'choice-note' }, o.note),
+      o.aside ? el('span', { class: 'choice-aside' }, o.aside) : null,
     ),
   );
 }

@@ -1,4 +1,5 @@
 import { twipsToInches } from './ooxml/ns.js';
+import { estimatePages } from './pageEstimate.js';
 import { sectionHasContent } from './build/matter.js';
 import type {
   FormatOptions,
@@ -316,25 +317,16 @@ export function estimatePageCount(
   analysis: ManuscriptAnalysis,
 ): number | null {
   const sizePt = profile.bodyFontSizePt;
-  if (!sizePt || analysis.wordCount === 0) return null;
+  if (!sizePt) return null;
 
   const page = profile.pageSetup;
-  const textWidthIn = twipsToInches(
-    page.widthTwips - page.margins.left - page.margins.right - page.margins.gutter,
-  );
-  const textHeightIn = twipsToInches(page.heightTwips - page.margins.top - page.margins.bottom);
-  if (textWidthIn <= 0 || textHeightIn <= 0) return null;
-
-  // An average word runs about 6.5 characters including its space, and a
-  // character is roughly half the point size wide.
-  const wordWidthIn = 6.5 * 0.5 * (sizePt / 72);
-  const wordsPerLine = textWidthIn / wordWidthIn;
-
-  const spacing = profile.bodyLineSpacing ? profile.bodyLineSpacing / 240 : 1.15;
-  const lineHeightIn = (sizePt * spacing) / 72;
-  const linesPerPage = textHeightIn / lineHeightIn;
-
-  const wordsPerPage = wordsPerLine * linesPerPage;
-  if (!Number.isFinite(wordsPerPage) || wordsPerPage <= 0) return null;
-  return Math.max(1, Math.round(analysis.wordCount / wordsPerPage));
+  return estimatePages({
+    textWidthIn: twipsToInches(
+      page.widthTwips - page.margins.left - page.margins.right - page.margins.gutter,
+    ),
+    textHeightIn: twipsToInches(page.heightTwips - page.margins.top - page.margins.bottom),
+    fontSizePt: sizePt,
+    lineSpacing: profile.bodyLineSpacing ? profile.bodyLineSpacing / 240 : 1.15,
+    wordCount: analysis.wordCount,
+  });
 }

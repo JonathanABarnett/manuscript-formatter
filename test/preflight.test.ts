@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeDocuments } from '../src/core/format.js';
+import { analyzeDocuments, analyzeReference } from '../src/core/format.js';
+import { TYPICAL_NOVEL_WORDS } from '../src/core/pageEstimate.js';
+import { BOOK_LOOKS, TRIM_SIZES, estimatePagesForDesign } from '../src/core/templates/design.js';
 import { estimatePageCount, preflight, type PreflightReport } from '../src/core/preflight.js';
 import { buildSampleManuscript, buildTemplate } from '../src/core/templates/generate.js';
 import { DEFAULT_FORMAT_OPTIONS, EMPTY_BOOK_DETAILS, NO_EXTRA_SECTIONS } from '../src/core/types.js';
@@ -187,6 +189,25 @@ describe('estimating how long the book will be', () => {
     const long = estimatePageCount(profile, longer)!;
 
     expect(long).toBeGreaterThan(short * 50);
+  });
+
+  it('quotes the same figure when choosing a size as when checking the book', async () => {
+    // The size picker works from a design's constants and the report works
+    // from a document already read. They must not disagree.
+    for (const trim of TRIM_SIZES) {
+      for (const look of BOOK_LOOKS) {
+        const { profile } = await analyzeReference({
+          data: await buildTemplate(trim.id, look.id),
+          name: `${trim.id}-${look.id}.docx`,
+        });
+        const fromDocument = estimatePageCount(profile, {
+          wordCount: TYPICAL_NOVEL_WORDS,
+        } as ManuscriptAnalysis);
+        const fromDesign = estimatePagesForDesign(trim, look, TYPICAL_NOVEL_WORDS);
+
+        expect(fromDesign).toBe(fromDocument);
+      }
+    }
   });
 
   it('gives up rather than guessing when the design has no body size', async () => {
