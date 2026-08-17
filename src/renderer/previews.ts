@@ -33,6 +33,28 @@ interface PreviewLine {
   blank?: boolean;
   /** The paragraph holds a picture rather than text. */
   image?: boolean;
+  /** Real width of that picture, so one too wide is seen to overflow. */
+  imageWidthTwips?: number | null;
+  /** Which manuscript block this came from, for highlighting one of them. */
+  blockIndex?: number;
+}
+
+/**
+ * A single page proof centred on one paragraph, for showing what a preflight
+ * finding is actually about. Returns null when the block cannot be drawn.
+ */
+export function buildProofPage(ctx: PreviewContext, blockIndex: number): HTMLElement | null {
+  const at = ctx.blocks.findIndex((b) => b.index === blockIndex);
+  if (at === -1) return null;
+  const block = ctx.blocks[at];
+  if (!isDrawable(block)) return null;
+
+  const lines = [
+    ...contentNear(ctx, at, -1, 2).reverse(),
+    lineFrom(block, ctx.options),
+    ...contentNear(ctx, at, 1, 2),
+  ];
+  return page(lines, ctx, blockIndex);
 }
 
 /**
@@ -48,6 +70,8 @@ function lineFrom(block: ManuscriptBlock, options: FormatOptions): PreviewLine {
     role: roleOf(block, options),
     text: block.text.trim(),
     image: block.isEmpty && block.hasImage,
+    imageWidthTwips: block.imageWidthTwips,
+    blockIndex: block.index,
   };
 }
 
@@ -273,7 +297,7 @@ function card(section: SectionSpec, lines: PreviewLine[], ctx: PreviewContext): 
   return wrapper;
 }
 
-function page(lines: PreviewLine[], ctx: PreviewContext): HTMLElement {
+function page(lines: PreviewLine[], ctx: PreviewContext, highlightBlock?: number): HTMLElement {
   const setup = ctx.profile.pageSetup;
   const widthIn = twipsToInches(setup.widthTwips);
   const heightIn = twipsToInches(setup.heightTwips);
@@ -315,7 +339,11 @@ function page(lines: PreviewLine[], ctx: PreviewContext): HTMLElement {
 
   const roles = effectiveRoleStyles(ctx);
   for (const line of lines) {
-    inner.appendChild(paragraph(line, roles, ctx, pxPerInch));
+    const node = paragraph(line, roles, ctx, pxPerInch);
+    if (highlightBlock !== undefined && line.blockIndex === highlightBlock) {
+      node.classList.add('proof-focus');
+    }
+    inner.appendChild(node);
   }
   sheet.appendChild(inner);
   return sheet;
@@ -349,7 +377,13 @@ function paragraph(
   }
   if (line.image) {
     node.className = 'preview-image';
-    node.textContent = line.text || 'image';
+    node.textContent = line.text || 'picture';
+    // Drawn at its real width, so a picture too wide for the page is seen to
+    // run past the margin rather than merely described as doing so.
+    if (line.imageWidthTwips) {
+      node.style.width = `${(line.imageWidthTwips / 1440) * pxPerInch}px`;
+      node.style.maxWidth = 'none';
+    }
     return node;
   }
   const text = line.text.length > MAX_CHARS ? `${line.text.slice(0, MAX_CHARS)}…` : line.text;

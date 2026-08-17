@@ -116,6 +116,7 @@ export async function analyzeReference(input: DocxInput): Promise<LoadedReferenc
     bodyFontName: bodyProps?.fontName ?? null,
     bodyFontSizePt: bodyProps?.fontSizePt ?? null,
     bodyLineSpacing: bodyProps?.lineSpacing ?? null,
+    bodyLineRule: bodyProps?.lineRule ?? null,
     warnings,
   };
 

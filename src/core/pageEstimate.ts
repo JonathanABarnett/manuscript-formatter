@@ -20,6 +20,26 @@ export interface PageEstimateInput {
 }
 
 /**
+ * Turn Word's line spacing into a plain multiple of the type size. Under the
+ * `auto` rule the value counts 240ths of a line; under `exact` and `atLeast`
+ * it is an absolute height in twips, which has to be measured against the
+ * type size instead.
+ */
+export function lineSpacingMultiple(
+  value: number | null,
+  rule: string | null,
+  fontSizePt: number,
+): number {
+  const DEFAULT = 1.15;
+  if (!value || value <= 0 || fontSizePt <= 0) return DEFAULT;
+  if (rule === 'exact' || rule === 'atLeast') {
+    // twips -> points -> multiple of the type size
+    return value / 20 / fontSizePt;
+  }
+  return value / 240;
+}
+
+/**
  * An average word runs about 6.5 characters including its trailing space, and
  * a character is roughly half the point size wide. That gives words per line;
  * the type size and line spacing give lines per page.

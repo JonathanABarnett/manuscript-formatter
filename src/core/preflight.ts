@@ -1,5 +1,5 @@
 import { twipsToInches } from './ooxml/ns.js';
-import { estimatePages } from './pageEstimate.js';
+import { estimatePages, lineSpacingMultiple } from './pageEstimate.js';
 import { sectionHasContent } from './build/matter.js';
 import type {
   FormatOptions,
@@ -326,7 +326,7 @@ export function estimatePageCount(
     ),
     textHeightIn: twipsToInches(page.heightTwips - page.margins.top - page.margins.bottom),
     fontSizePt: sizePt,
-    lineSpacing: profile.bodyLineSpacing ? profile.bodyLineSpacing / 240 : 1.15,
+    lineSpacing: lineSpacingMultiple(profile.bodyLineSpacing, profile.bodyLineRule, sizePt),
     wordCount: analysis.wordCount,
   });
 }

@@ -14,7 +14,7 @@ import {
 import type { AnalysisResult } from '../shared/ipc.js';
 import { BOOK_LOOKS, TRIM_SIZES, estimatePagesForDesign } from '../core/templates/design.js';
 import { TYPICAL_NOVEL_WORDS } from '../core/pageEstimate.js';
-import { renderPreviews } from './previews.js';
+import { buildProofPage, renderPreviews, type PreviewContext } from './previews.js';
 import { renderDetailsForm } from './details.js';
 import { preflight, type CheckLevel, type PreflightReport } from '../core/preflight.js';
 import { hasSeenTour, startTour } from './tour.js';
@@ -31,6 +31,8 @@ interface State {
   outputPath: string | null;
   showAllBlocks: boolean;
   preflight: PreflightReport | null;
+  /** Block whose page proof is open in the report, so it survives a redraw. */
+  openProof: number | null;
   /** Set when the author stops a run; the finished file is then discarded. */
   cancelled: boolean;
   /** Rendered width of a preview page, in CSS pixels. */
@@ -50,6 +52,7 @@ const state: State = {
   outputPath: null,
   showAllBlocks: false,
   preflight: null,
+  openProof: null,
   cancelled: false,
   previewWidth: 380,
   busy: false,
@@ -540,14 +543,19 @@ function renderDetails(): void {
  * style mapping, a paragraph's role, or an option that affects layout — so the
  * proof always matches what pressing Format would produce.
  */
+/** What the preview machinery needs, shared by the page proofs and the report. */
+function previewContext(pageWidthPx = state.previewWidth): PreviewContext {
+  return {
+    profile: state.analysis!.profile,
+    blocks: state.analysis!.analysis.blocks,
+    options: state.options,
+    pageWidthPx,
+  };
+}
+
 function refreshPreviews(): void {
   if (!state.analysis) return;
-  renderPreviews($('#previews'), {
-    profile: state.analysis.profile,
-    blocks: state.analysis.analysis.blocks,
-    options: state.options,
-    pageWidthPx: state.previewWidth,
-  });
+  renderPreviews($('#previews'), previewContext());
 }
 
 function renderTemplateFacts(profile: ReferenceProfile): void {
@@ -1036,14 +1044,90 @@ function renderPreflight(): void {
  * so a finding can be looked at rather than merely read about.
  */
 function exampleLink(example: { index: number; preview: string }): HTMLElement {
+  const wrapper = el('div', { class: 'preflight-example-row' });
+  const proof = el('div', { class: 'preflight-proof', hidden: true });
+
   const button = el(
     'button',
     { type: 'button', class: 'preflight-example' },
     `“${example.preview}”`,
   );
-  button.title = 'Show me this line';
-  button.addEventListener('click', () => revealBlock(example.index));
-  return button;
+  button.title = 'Show this line as it will be set';
+
+  const open = (): void => {
+    proof.hidden = false;
+    button.classList.add('open');
+    state.openProof = example.index;
+    drawProof(proof, example.index);
+  };
+  const close = (): void => {
+    proof.hidden = true;
+    button.classList.remove('open');
+    if (state.openProof === example.index) state.openProof = null;
+    replace(proof);
+  };
+
+  button.addEventListener('click', () => (proof.hidden ? open() : close()));
+  // The report is rebuilt whenever anything changes, so an open proof has to
+  // reopen itself rather than vanish under the reader.
+  if (state.openProof === example.index) open();
+
+  wrapper.append(button, proof);
+  return wrapper;
+}
+
+/**
+ * Draw the page this finding is about, with the offending line marked and a
+ * control to change what it is. Changing it redraws everything that depends
+ * on it, so the fix can be seen rather than taken on trust.
+ */
+function drawProof(container: HTMLElement, blockIndex: number): void {
+  if (!state.analysis) return;
+  const block = state.analysis.analysis.blocks.find((b) => b.index === blockIndex);
+  const ctx = previewContext();
+  const pageProof = buildProofPage(ctx, blockIndex);
+
+  const controls: HTMLElement[] = [];
+  if (block && block.kind === 'paragraph') {
+    const select = el('select', { class: 'proof-role' });
+    for (const option of ASSIGNABLE_ROLES) {
+      select.appendChild(
+        el(
+          'option',
+          {
+            value: option,
+            selected: option === (state.options.roleOverrides[block.index] ?? block.role),
+          },
+          ROLE_LABELS[option],
+        ),
+      );
+    }
+    select.addEventListener('change', () => {
+      const chosen = select.value as BlockRole;
+      if (chosen === block.autoRole) delete state.options.roleOverrides[block.index];
+      else state.options.roleOverrides[block.index] = chosen;
+      renderStructure();
+      refreshPreviews();
+      updateResetButton();
+      // Rebuilding the report reopens this proof, so the change is seen on
+      // the page without the panel collapsing.
+      renderPreflight();
+    });
+    controls.push(
+      el('label', { class: 'proof-control' }, el('span', {}, 'This line is a'), select),
+    );
+  }
+
+  const jump = el('button', { type: 'button', class: 'linkish' }, 'Find it in the list');
+  jump.addEventListener('click', () => revealBlock(blockIndex));
+  controls.push(jump);
+
+  replace(
+    container,
+    pageProof ??
+      el('p', { class: 'proof-missing' }, 'This one cannot be drawn as a page.'),
+    el('div', { class: 'proof-controls' }, ...controls),
+  );
 }
 
 /** Scroll the paragraph list to a block and mark it, expanding if hidden. */

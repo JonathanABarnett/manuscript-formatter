@@ -185,6 +185,12 @@ export interface ReferenceProfile {
   bodyFontName: string | null;
   bodyFontSizePt: number | null;
   bodyLineSpacing: number | null;
+  /**
+   * How `bodyLineSpacing` is meant: `auto` counts in 240ths of a line, while
+   * `exact` and `atLeast` are an absolute height in twips. Reading it as the
+   * wrong one throws the page estimate out by a third.
+   */
+  bodyLineRule: string | null;
   warnings: string[];
 }
 

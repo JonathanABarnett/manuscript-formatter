@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeDocuments, analyzeReference } from '../src/core/format.js';
-import { TYPICAL_NOVEL_WORDS } from '../src/core/pageEstimate.js';
+import { TYPICAL_NOVEL_WORDS, lineSpacingMultiple } from '../src/core/pageEstimate.js';
 import { BOOK_LOOKS, TRIM_SIZES, estimatePagesForDesign } from '../src/core/templates/design.js';
 import { estimatePageCount, preflight, type PreflightReport } from '../src/core/preflight.js';
 import { buildSampleManuscript, buildTemplate } from '../src/core/templates/generate.js';
@@ -208,6 +208,20 @@ describe('estimating how long the book will be', () => {
         expect(fromDesign).toBe(fromDocument);
       }
     }
+  });
+
+  it('reads exact line spacing as a height, not as a multiple', () => {
+    // Amazon's template sets 9pt type on an exact 220 twip (11pt) line.
+    // Treating 220 as 220/240 of a line made lines a third too tight and
+    // under-counted a book's length by about a quarter.
+    expect(lineSpacingMultiple(220, 'exact', 9)).toBeCloseTo(11 / 9, 5);
+    expect(lineSpacingMultiple(240, 'atLeast', 12)).toBeCloseTo(1, 5);
+    // `auto` really does count 240ths of a line.
+    expect(lineSpacingMultiple(276, 'auto', 11)).toBeCloseTo(1.15, 5);
+    expect(lineSpacingMultiple(240, null, 11)).toBeCloseTo(1, 5);
+    // Nonsense falls back rather than producing an absurd page count.
+    expect(lineSpacingMultiple(null, 'auto', 11)).toBeCloseTo(1.15, 5);
+    expect(lineSpacingMultiple(0, 'exact', 11)).toBeCloseTo(1.15, 5);
   });
 
   it('gives up rather than guessing when the design has no body size', async () => {
