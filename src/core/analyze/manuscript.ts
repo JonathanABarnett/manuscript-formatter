@@ -1,6 +1,7 @@
 import { DocxPackage } from '../ooxml/package.js';
 import { RELTYPE } from '../ooxml/ns.js';
-import { child, descendants } from '../ooxml/xml.js';
+import { NS } from '../ooxml/ns.js';
+import { attr, child, descendants } from '../ooxml/xml.js';
 import type { BlockRole, DocxInput, ManuscriptAnalysis, ManuscriptBlock } from '../types.js';
 import { StyleSheet } from './styles.js';
 import { readParagraph, type ParagraphFacts } from './paragraph.js';
@@ -21,6 +22,29 @@ export interface LoadedManuscript {
 }
 
 const PREVIEW_LIMIT = 140;
+
+/** DrawingML measures in EMUs: 914400 per inch against 1440 twips per inch. */
+const EMU_PER_TWIP = 635;
+
+/** Widest inline or floating picture in a paragraph, in twips. */
+function imageWidthTwips(p: Element): number | null {
+  let widest = 0;
+  for (const extent of [...descendants(p, 'extent', NS.wp), ...descendants(p, 'ext', NS.a)]) {
+    const cx = Number(extent.getAttribute('cx') ?? '');
+    if (Number.isFinite(cx) && cx > 0) widest = Math.max(widest, cx / EMU_PER_TWIP);
+  }
+  return widest > 0 ? Math.round(widest) : null;
+}
+
+/** A table's declared width, when it gives one in twips rather than a share. */
+function tableWidthTwips(tbl: Element): number | null {
+  const w = child(child(tbl, 'tblPr'), 'tblW');
+  if (!w) return null;
+  const type = attr(w, 'type');
+  if (type !== 'dxa' && type !== null) return null;
+  const value = Number(attr(w, 'w') ?? '');
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
 
 export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscript> {
   const pkg = await DocxPackage.fromBuffer(input.data, input.name);
@@ -107,7 +131,9 @@ function buildBlocks(
   const blocks: ManuscriptBlock[] = nodes.map((_node, index) => {
     const f = facts[index];
     if (!f) {
-      return baseBlock(index, 'table', 'table', 1, ['table copied unchanged']);
+      const block = baseBlock(index, 'table', 'table', 1, ['table copied unchanged']);
+      block.tableWidthTwips = tableWidthTwips(nodes[index]);
+      return block;
     }
     const ctx = contextFor(facts, index, medianProseWords);
     const { role, confidence, reasons, structural } = classifyParagraph(f, ctx);
@@ -135,6 +161,8 @@ function buildBlocks(
       hasFootnote: f.hasFootnote,
       hasHyperlink: f.hasHyperlink,
       structuralMarker: structural,
+      imageWidthTwips: f.hasImage ? imageWidthTwips(nodes[index]) : null,
+      tableWidthTwips: null,
       confidence,
       reasons,
     };
@@ -175,6 +203,8 @@ function baseBlock(
     hasFootnote: false,
     hasHyperlink: false,
     structuralMarker: false,
+    imageWidthTwips: null,
+    tableWidthTwips: null,
     confidence,
     reasons,
   };

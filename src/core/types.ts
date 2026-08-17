@@ -205,6 +205,10 @@ export interface ManuscriptBlock {
   hasHyperlink: boolean;
   /** The paragraph names a book division outright ("Chapter 4", "Prologue"). */
   structuralMarker: boolean;
+  /** Widest picture in this block, in twips. Null when it holds none. */
+  imageWidthTwips: number | null;
+  /** Declared width of a table block, in twips. Null when it does not say. */
+  tableWidthTwips: number | null;
   /** 0..1 — how sure the classifier is. Low values are surfaced for review. */
   confidence: number;
   reasons: string[];

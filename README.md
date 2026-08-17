@@ -42,6 +42,18 @@ chosen design. A section you leave blank is skipped rather than producing a head
 the form says so before you format. A table of contents is added as a real Word field, so Word fills
 in the chapter names and page numbers when the file opens.
 
+### Before you download
+
+A plain-English report groups everything it can check into **Needs attention**, **Worth checking**
+and **Ready**: chapters that were not recognised, lines it was unsure about, filler text left over
+from a template, missing page numbers, template wording still sitting in the page headers, pictures
+or tables wider than the page, blank left-hand pages, and whether the inside margin suits the
+book's likely length.
+
+The page count behind that margin advice is an estimate from the text block and type size, and the
+report says so. It never claims a book is KDP-approved: Amazon's Print Previewer is the check that
+decides what gets printed, and every report ends by saying that.
+
 ## Why it works the way it does
 
 Rather than rebuilding a document from scratch and trying to re-create the reference's settings, the

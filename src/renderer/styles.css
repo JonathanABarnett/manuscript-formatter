@@ -381,6 +381,181 @@ input[type="checkbox"] {
   font-size: 0.78rem;
 }
 
+/* --- preflight report and progress ------------------------------------------ */
+
+.preflight-panel {
+  margin-top: 1.1rem;
+}
+
+.preflight-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0.9rem;
+}
+
+.preflight-head h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+.preflight-head.level-attention h3 {
+  color: var(--danger);
+}
+
+.preflight-head.level-check h3 {
+  color: var(--warn);
+}
+
+.preflight-head.level-ready h3 {
+  color: var(--ok);
+}
+
+.preflight-pages {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+.preflight-group {
+  margin-bottom: 1rem;
+}
+
+.preflight-group h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.preflight-group.level-attention h4 {
+  color: var(--danger);
+}
+
+.preflight-group.level-check h4 {
+  color: var(--warn);
+}
+
+.preflight-group.level-ready h4 {
+  color: var(--ok);
+}
+
+.preflight-count {
+  background: var(--paper);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 0.38rem;
+  font-size: 0.72rem;
+}
+
+.preflight-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.preflight-group li {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--rule-strong);
+}
+
+.preflight-group.level-attention li {
+  border-left-color: var(--danger);
+}
+
+.preflight-group.level-check li {
+  border-left-color: var(--warn);
+}
+
+.preflight-group.level-ready li {
+  border-left-color: var(--ok);
+}
+
+.preflight-title {
+  display: block;
+  font-size: 0.87rem;
+  font-weight: 600;
+}
+
+.preflight-detail {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  max-width: 78ch;
+}
+
+.preflight-footnote {
+  margin: 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  max-width: 78ch;
+}
+
+.progress {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.progress-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.progress-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.83rem;
+  color: var(--ink-faint);
+}
+
+.progress-steps li.active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.progress-steps li.done {
+  color: var(--ok);
+}
+
+.progress-mark {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 0.7rem;
+}
+
+.progress-steps li.active .progress-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* --- book details form ------------------------------------------------------ */
 
 .details-fields {
@@ -1149,6 +1324,24 @@ button.secondary:hover:not(:disabled) {
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.6rem 1.1rem;
+  border: 1px solid var(--rule-strong);
+  background: var(--card);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.button-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .reassurance {

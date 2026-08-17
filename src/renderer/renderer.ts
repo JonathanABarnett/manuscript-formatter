@@ -15,6 +15,7 @@ import type { AnalysisResult } from '../shared/ipc.js';
 import { BOOK_LOOKS, TRIM_SIZES } from '../core/templates/design.js';
 import { renderPreviews } from './previews.js';
 import { renderDetailsForm } from './details.js';
+import { preflight, type CheckLevel, type PreflightReport } from '../core/preflight.js';
 import { hasSeenTour, startTour } from './tour.js';
 
 interface State {
@@ -28,6 +29,9 @@ interface State {
   options: FormatOptions;
   outputPath: string | null;
   showAllBlocks: boolean;
+  preflight: PreflightReport | null;
+  /** Set when the author stops a run; the finished file is then discarded. */
+  cancelled: boolean;
   /** Rendered width of a preview page, in CSS pixels. */
   previewWidth: number;
   busy: boolean;
@@ -44,6 +48,8 @@ const state: State = {
   options: { ...DEFAULT_FORMAT_OPTIONS },
   outputPath: null,
   showAllBlocks: false,
+  preflight: null,
+  cancelled: false,
   previewWidth: 380,
   busy: false,
   result: null,
@@ -443,6 +449,7 @@ function renderReview(): void {
   renderOptions();
   renderDetails();
   refreshPreviews();
+  renderPreflight();
   renderStyleMap(state.analysis.profile);
   renderStructure();
 }
@@ -514,6 +521,7 @@ function renderDetails(): void {
       // Only a switched section changes the form's shape; typing must not
       // redraw the field being typed into.
       if (structural) renderDetails();
+      renderPreflight();
     },
   });
 }
@@ -933,6 +941,102 @@ function renderBlockRow(block: ManuscriptBlock): HTMLElement {
 
 // --- step 3: output ---------------------------------------------------------
 
+/** The plain-English report, shown before making the book and again after. */
+function renderPreflight(): void {
+  const panel = $('#preflight');
+  if (!state.analysis) {
+    panel.hidden = true;
+    return;
+  }
+  const report = preflight({
+    profile: state.analysis.profile,
+    analysis: state.analysis.analysis,
+    options: state.options,
+  });
+  state.preflight = report;
+
+  const HEADINGS: Record<CheckLevel, string> = {
+    attention: 'Needs attention',
+    check: 'Worth checking',
+    ready: 'Ready',
+  };
+  const groups = (['attention', 'check', 'ready'] as CheckLevel[])
+    .map((level) => [level, report.checks.filter((c) => c.level === level)] as const)
+    .filter(([, list]) => list.length > 0);
+
+  replace(
+    panel,
+    el(
+      'div',
+      { class: `preflight-head level-${report.level}` },
+      el(
+        'h3',
+        {},
+        report.level === 'attention'
+          ? 'A few things need your attention'
+          : report.level === 'check'
+            ? 'Worth a quick look before you upload'
+            : 'Everything looks ready',
+      ),
+      report.estimatedPages !== null
+        ? el(
+            'span',
+            { class: 'preflight-pages' },
+            `roughly ${report.estimatedPages} page${report.estimatedPages === 1 ? '' : 's'}`,
+          )
+        : null,
+    ),
+    ...groups.map(([level, list]) =>
+      el(
+        'div',
+        { class: `preflight-group level-${level}` },
+        el('h4', {}, HEADINGS[level], el('span', { class: 'preflight-count' }, String(list.length))),
+        el(
+          'ul',
+          {},
+          ...list.map((check) =>
+            el(
+              'li',
+              {},
+              el('span', { class: 'preflight-title' }, check.title),
+              el('span', { class: 'preflight-detail' }, check.detail),
+            ),
+          ),
+        ),
+      ),
+    ),
+    el(
+      'p',
+      { class: 'preflight-footnote' },
+      'These are checks this app can make. Amazon’s own Print Previewer is the one that decides ' +
+        'what gets printed — always look through it there before publishing.',
+    ),
+  );
+  panel.hidden = false;
+}
+
+/** Named stages, so waiting shows what is happening rather than a spinner. */
+const FORMAT_STEPS = [
+  'Reading your manuscript',
+  'Finding chapters',
+  'Applying the design',
+  'Creating your file',
+] as const;
+
+function renderProgress(activeIndex: number): void {
+  replace(
+    $('#progress-steps'),
+    ...FORMAT_STEPS.map((label, i) =>
+      el(
+        'li',
+        { class: i < activeIndex ? 'done' : i === activeIndex ? 'active' : '' },
+        el('span', { class: 'progress-mark' }, i < activeIndex ? '✓' : String(i + 1)),
+        label,
+      ),
+    ),
+  );
+}
+
 function renderOutput(): void {
   const target = $('#output-path');
   target.textContent = state.outputPath ?? '';
@@ -953,10 +1057,20 @@ async function runFormat(): Promise<void> {
 
   const button = $<HTMLButtonElement>('#run-format');
   state.busy = true;
+  state.cancelled = false;
   button.disabled = true;
-  button.classList.add('spinner');
-  button.textContent = 'Making your book';
+  button.textContent = 'Making your book…';
   showError(null);
+  $('#result').hidden = true;
+  $('#progress').hidden = false;
+
+  // The work itself is one call, so the steps are paced to it rather than
+  // reported by it. They stop at the last stage until the file is really done.
+  let step = 0;
+  renderProgress(0);
+  const ticker = window.setInterval(() => {
+    if (step < FORMAT_STEPS.length - 1) renderProgress(++step);
+  }, 320);
 
   const outcome = await window.formatter.format({
     referencePath: state.referencePath,
@@ -965,10 +1079,24 @@ async function runFormat(): Promise<void> {
     options: state.options,
   });
 
+  window.clearInterval(ticker);
   state.busy = false;
   button.disabled = false;
-  button.classList.remove('spinner');
   button.textContent = 'Make my formatted book';
+  $('#progress').hidden = true;
+
+  if (state.cancelled) {
+    // Be exact about what stopping actually achieved. In a browser nothing is
+    // saved until Download is pressed, so cancelling really does discard it.
+    // On the desktop the file has already been written by the time we return.
+    $('#analyze-status').textContent =
+      window.formatter.platform === 'web'
+        ? 'Stopped. Nothing was saved to your computer.'
+        : outcome.ok
+          ? `Stopped, but the file had already been written to ${outcome.value.outputPath}.`
+          : 'Stopped. Nothing was saved.';
+    return;
+  }
 
   if (!outcome.ok) {
     showError(outcome.error);
@@ -1040,7 +1168,24 @@ function renderResult(result: FormatResult): void {
           el('ul', {}, ...result.warnings.map((w) => el('li', {}, w))),
         )
       : null,
-    el('div', { class: 'result-actions' }, open, reveal),
+    el(
+      'div',
+      { class: 'result-actions' },
+      open,
+      reveal,
+      // Opens in the reader's own browser; the desktop shell hands http(s)
+      // links to the system rather than navigating the app window.
+      el(
+        'a',
+        {
+          class: 'button-link',
+          href: 'https://kdp.amazon.com/en_US/help/topic/G201834260',
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+        'What to do next on KDP',
+      ),
+    ),
   );
   if (onWeb) {
     const label = $('#output-path');
@@ -1074,6 +1219,12 @@ export function init(): void {
   $('#try-sample').addEventListener('click', () => void useSampleBook());
   $('#start-over').addEventListener('click', startOver);
   $('#show-tour').addEventListener('click', () => startTour());
+  $('#cancel-format').addEventListener('click', () => {
+    // The engine runs to completion either way; cancelling discards the
+    // result rather than pretending the work can be interrupted mid-file.
+    state.cancelled = true;
+    $('#progress').hidden = true;
+  });
   // Also builds the default design and marks the tab, so the page opens ready.
   setMode('quick');
 
