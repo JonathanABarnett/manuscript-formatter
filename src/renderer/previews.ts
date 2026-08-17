@@ -1,5 +1,6 @@
 import { twipsToInches } from '../core/ooxml/ns.js';
 import { styleForRole, type RoleStyleMap } from '../core/roles.js';
+import { sectionHasContent } from '../core/build/matter.js';
 import {
   type BlockRole,
   type FormatOptions,
@@ -65,13 +66,13 @@ const SECTIONS: SectionSpec[] = [
     key: 'titlePage',
     label: 'Your title page',
     caption: 'Your title, author name, and other opening-page text.',
-    build: (ctx) => linesFor(ctx, ['frontMatterTitle', 'frontMatter'], 8),
+    build: (ctx) => generatedTitlePage(ctx) ?? linesFor(ctx, ['frontMatterTitle', 'frontMatter'], 8),
   },
   {
     key: 'copyright',
     label: 'Your copyright page',
     caption: 'Found from the © line, ISBN, edition details, or rights wording.',
-    build: (ctx) => linesFor(ctx, ['copyright'], 10),
+    build: (ctx) => generatedCopyrightPage(ctx) ?? linesFor(ctx, ['copyright'], 10),
   },
   {
     key: 'partTitle',
@@ -144,6 +145,42 @@ export function renderPreviews(container: HTMLElement, ctx: PreviewContext): voi
 /** Effective role of a block, honouring any override the reviewer has set. */
 function roleOf(block: ManuscriptBlock, options: FormatOptions): BlockRole {
   return options.roleOverrides[block.index] ?? block.role;
+}
+
+/**
+ * When the author has asked the app to build a title or copyright page, the
+ * proof must show that page rather than whatever the manuscript happens to
+ * open with — otherwise the preview contradicts the finished book.
+ */
+function generatedTitlePage(ctx: PreviewContext): PreviewLine[] | null {
+  const { bookDetails: d, extraSections: s } = ctx.options;
+  if (!s.titlePage || !sectionHasContent('titlePage', d)) return null;
+  const lines: PreviewLine[] = [{ role: 'frontMatterTitle', text: d.title.trim() }];
+  if (d.subtitle.trim()) lines.push({ role: 'chapterSubtitle', text: d.subtitle.trim() });
+  if (d.author.trim()) lines.push({ role: 'frontMatter', text: d.author.trim() });
+  return lines;
+}
+
+function generatedCopyrightPage(ctx: PreviewContext): PreviewLine[] | null {
+  const { bookDetails: d, extraSections: s } = ctx.options;
+  if (!s.copyrightPage || !sectionHasContent('copyrightPage', d)) return null;
+  const year = d.copyrightYear.trim();
+  const author = d.author.trim();
+  const notice =
+    year && author ? `Copyright © ${year} by ${author}` : year ? `Copyright © ${year}` : `Copyright © ${author}`;
+  const lines: PreviewLine[] = [
+    { role: 'copyright', text: notice },
+    { role: 'copyright', text: 'All rights reserved.' },
+    {
+      role: 'copyright',
+      text:
+        'No part of this book may be reproduced in any form without written permission ' +
+        'from the copyright holder, except brief quotations used in a review.',
+    },
+  ];
+  if (d.publisher.trim()) lines.push({ role: 'copyright', text: d.publisher.trim() });
+  if (d.isbn.trim()) lines.push({ role: 'copyright', text: `ISBN: ${d.isbn.trim()}` });
+  return lines;
 }
 
 /** The first `limit` blocks whose role is one of `roles`, in document order. */
@@ -262,6 +299,19 @@ function page(lines: PreviewLine[], ctx: PreviewContext): HTMLElement {
   guide.className = 'preview-guide';
   guide.style.inset = inner.style.padding;
   sheet.appendChild(guide);
+
+  // Templates park a copyright notice at the foot of its page and centre a
+  // title page, using section properties. Show that, or the proof lies.
+  const pageRole = lines.find((l) => !l.blank)?.role;
+  const vAlign = pageRole
+    ? (ctx.profile.roleVAlign[pageRole as StyleRole] ??
+      (pageRole === 'copyright' ? 'bottom' : undefined))
+    : undefined;
+  if (vAlign === 'bottom' || vAlign === 'center') {
+    inner.style.display = 'flex';
+    inner.style.flexDirection = 'column';
+    inner.style.justifyContent = vAlign === 'bottom' ? 'flex-end' : 'center';
+  }
 
   const roles = effectiveRoleStyles(ctx);
   for (const line of lines) {

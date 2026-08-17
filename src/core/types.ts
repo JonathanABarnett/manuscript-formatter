@@ -161,6 +161,18 @@ export interface ReferenceProfile {
    */
   chapterTitleBlanksBefore: number;
   chapterTitleBlanksAfter: number;
+  /**
+   * Where a page's text sits vertically, per kind of page. Book templates
+   * park a copyright notice at the foot of its page and centre a title page,
+   * and they do it with section properties rather than blank lines.
+   */
+  roleVAlign: Partial<Record<StyleRole, string>>;
+  /**
+   * Index into the reference's sections of the one the body matter uses. It is
+   * not always the last: templates put each chapter in its own section, and it
+   * is the first body section that restarts page numbering at 1.
+   */
+  bodySectionIndex: number;
   usesFirstParagraphNoIndent: boolean;
   bodyFirstLineIndentTwips: number | null;
   hasHeaders: boolean;
@@ -227,6 +239,8 @@ export interface ManuscriptAnalysis {
   footnoteCount: number;
   /** Index of the first block classified as body-matter content. */
   bodyStartIndex: number;
+  /** The manuscript already carries a contents list of its own. */
+  hasContentsPage: boolean;
   warnings: string[];
 }
 

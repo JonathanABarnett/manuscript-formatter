@@ -1000,6 +1000,13 @@ function renderPreflight(): void {
               {},
               el('span', { class: 'preflight-title' }, check.title),
               el('span', { class: 'preflight-detail' }, check.detail),
+              check.examples && check.examples.length > 0
+                ? el(
+                    'ul',
+                    { class: 'preflight-examples' },
+                    ...check.examples.map((example) => el('li', {}, exampleLink(example))),
+                  )
+                : null,
             ),
           ),
         ),
@@ -1013,6 +1020,42 @@ function renderPreflight(): void {
     ),
   );
   panel.hidden = false;
+}
+
+/**
+ * A quoted line from the manuscript that jumps to it in the paragraph list,
+ * so a finding can be looked at rather than merely read about.
+ */
+function exampleLink(example: { index: number; preview: string }): HTMLElement {
+  const button = el(
+    'button',
+    { type: 'button', class: 'preflight-example' },
+    `“${example.preview}”`,
+  );
+  button.title = 'Show me this line';
+  button.addEventListener('click', () => revealBlock(example.index));
+  return button;
+}
+
+/** Scroll the paragraph list to a block and mark it, expanding if hidden. */
+function revealBlock(index: number): void {
+  const showRow = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>(`.block-row[data-index="${index}"]`);
+
+  if (!showRow()) {
+    // Structural rows only are listed by default; the line may be prose.
+    const toggle = $<HTMLInputElement>('#show-all-blocks');
+    if (!toggle.checked) {
+      toggle.checked = true;
+      state.showAllBlocks = true;
+      renderStructure();
+    }
+  }
+  const row = showRow();
+  if (!row) return;
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.add('flash');
+  window.setTimeout(() => row.classList.remove('flash'), 1600);
 }
 
 /** Named stages, so waiting shows what is happening rather than a spinner. */

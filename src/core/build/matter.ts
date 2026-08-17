@@ -130,15 +130,27 @@ function headedSection(ctx: MatterContext, heading: string, body: string): Eleme
   return out;
 }
 
+/** One generated page, kept together so it can be given its own section. */
+export interface MatterPage {
+  /** The role whose vertical placement this page should follow. */
+  role: BlockRole;
+  paragraphs: Element[];
+}
+
 /** The pages that open the book, in the order a printed book sets them. */
-export function buildFrontMatter(ctx: MatterContext): Element[] {
+export function buildFrontMatter(ctx: MatterContext): MatterPage[] {
   const { details, sections } = ctx;
-  const out: Element[] = [];
+  const pages: MatterPage[] = [];
+  let out: Element[] = [];
   let first = true;
   const startPage = (): boolean => {
     const breakBefore = !first;
     first = false;
     return breakBefore;
+  };
+  const endPage = (role: BlockRole): void => {
+    if (out.length > 0) pages.push({ role, paragraphs: out });
+    out = [];
   };
 
   if (sections.titlePage && sectionHasContent('titlePage', details)) {
@@ -150,6 +162,7 @@ export function buildFrontMatter(ctx: MatterContext): Element[] {
     if (details.author.trim()) {
       out.push(para(ctx, 'frontMatter', details.author.trim(), { align: 'center' }));
     }
+    endPage('frontMatterTitle');
   }
 
   if (sections.copyrightPage && sectionHasContent('copyrightPage', details)) {
@@ -170,6 +183,7 @@ export function buildFrontMatter(ctx: MatterContext): Element[] {
     );
     if (details.publisher.trim()) out.push(para(ctx, 'copyright', details.publisher.trim()));
     if (details.isbn.trim()) out.push(para(ctx, 'copyright', `ISBN: ${details.isbn.trim()}`));
+    endPage('copyright');
   }
 
   if (sections.dedication && sectionHasContent('dedication', details)) {
@@ -177,15 +191,17 @@ export function buildFrontMatter(ctx: MatterContext): Element[] {
     const [head, ...rest] = lines(details.dedication);
     out.push(para(ctx, 'frontMatter', head, { breakBefore, align: 'center' }));
     for (const line of rest) out.push(para(ctx, 'frontMatter', line, { align: 'center' }));
+    endPage('frontMatter');
   }
 
   if (sections.contents) {
     const breakBefore = startPage();
     out.push(para(ctx, 'chapterTitle', 'Contents', { breakBefore }));
     out.push(contentsField(ctx));
+    endPage('frontMatter');
   }
 
-  return out;
+  return pages;
 }
 
 /** The sections that close the book. */

@@ -73,8 +73,14 @@ describe('the preflight report', () => {
     };
     const report = preflight({ profile, analysis: withFiller, options: withOptions() });
 
-    expect(find(report, 'placeholder-text')?.level).toBe('attention');
-    expect(find(report, 'placeholder-text')?.detail).toContain('Insert your chapter one text here.');
+    const check = find(report, 'placeholder-text');
+    expect(check?.level).toBe('attention');
+    // The offending line is offered as an example so the reviewer can be shown
+    // it, rather than being told to go and find it.
+    expect(check?.examples?.[0]).toMatchObject({
+      index: 9999,
+      preview: 'Insert your chapter one text here.',
+    });
   });
 
   it('flags template wording still sitting in the page headers', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatToBuffer } from '../src/core/format.js';
+import { analyzeDocuments, formatToBuffer, suggestOptions } from '../src/core/format.js';
 import { DocxPackage } from '../src/core/ooxml/package.js';
 import { attr, child, children, descendants, textOf } from '../src/core/ooxml/xml.js';
 import { buildSampleManuscript, buildTemplate } from '../src/core/templates/generate.js';
@@ -51,6 +51,41 @@ async function build(options: Partial<FormatOptions>) {
   };
 }
 
+describe('the contents page', () => {
+  it('is offered by default for a book with chapters and no contents of its own', async () => {
+    const [template, manuscript] = await Promise.all([
+      buildTemplate('6x9', 'classic'),
+      buildSampleManuscript(),
+    ]);
+    const { analysis, suggestedOptions } = await analyzeDocuments(
+      asInput(template, 'design.docx'),
+      asInput(manuscript, 'sample.docx'),
+    );
+
+    expect(analysis.hasContentsPage).toBe(false);
+    expect(suggestedOptions.extraSections.contents).toBe(true);
+    // Nothing else is switched on for the author without being asked.
+    expect(suggestedOptions.extraSections.titlePage).toBe(false);
+    expect(suggestedOptions.extraSections.copyrightPage).toBe(false);
+  });
+
+  it('is not offered when the manuscript already has one', async () => {
+    const { profile, analysis } = await analyzeDocuments(
+      asInput(await buildTemplate('6x9', 'classic'), 'design.docx'),
+      asInput(await buildSampleManuscript(), 'sample.docx'),
+    );
+
+    expect(suggestOptions(profile, analysis).extraSections.contents).toBe(true);
+    expect(
+      suggestOptions(profile, { ...analysis, hasContentsPage: true }).extraSections.contents,
+    ).toBe(false);
+    // Nor for a book with only one chapter, where a list would be pointless.
+    expect(
+      suggestOptions(profile, { ...analysis, chapterCount: 1 }).extraSections.contents,
+    ).toBe(false);
+  });
+});
+
 describe('the generated opening pages', () => {
   it('adds nothing at all when no sections are switched on', async () => {
     const { text } = await build({ bookDetails: DETAILS, extraSections: NO_EXTRA_SECTIONS });
@@ -90,6 +125,19 @@ describe('the generated opening pages', () => {
     expect(joined).toContain('All rights reserved.');
     expect(joined).toContain('Small Hours Press');
     expect(joined).toContain('ISBN: 978-1-234567-89-0');
+  });
+
+  it('sets the copyright page at the foot of its page, as printed books do', async () => {
+    const { body } = await build({
+      bookDetails: DETAILS,
+      extraSections: { ...NO_EXTRA_SECTIONS, copyrightPage: true },
+      replaceFrontMatter: true,
+    });
+
+    const copyrightSection = children(body, 'p')
+      .map((p) => child(child(p, 'pPr'), 'sectPr'))
+      .find((s) => s !== null && attr(child(s, 'vAlign'), 'val') === 'bottom');
+    expect(copyrightSection).toBeDefined();
   });
 
   it('skips a section the author left blank rather than heading an empty page', async () => {

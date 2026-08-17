@@ -35,12 +35,20 @@ export async function analyzeDocuments(
   return {
     profile: loadedReference.profile,
     analysis: loadedManuscript.analysis,
-    suggestedOptions: suggestOptions(loadedReference.profile),
+    suggestedOptions: suggestOptions(loadedReference.profile, loadedManuscript.analysis),
   };
 }
 
-/** Formatting defaults that match what the reference document already does. */
-export function suggestOptions(profile: ReferenceProfile): FormatOptions {
+/**
+ * Formatting defaults that match what the reference document already does.
+ * When the manuscript is given too, a contents page is offered by default
+ * unless the book already has one.
+ */
+export function suggestOptions(
+  profile: ReferenceProfile,
+  analysis?: ManuscriptAnalysis,
+): FormatOptions {
+  const wantsContents = analysis ? !analysis.hasContentsPage && analysis.chapterCount > 1 : false;
   return {
     ...DEFAULT_FORMAT_OPTIONS,
     chapterStart: profile.chapterStartsOnOddPage
@@ -49,6 +57,7 @@ export function suggestOptions(profile: ReferenceProfile): FormatOptions {
         ? 'newPage'
         : 'continuous',
     firstParagraphNoIndent: profile.usesFirstParagraphNoIndent,
+    extraSections: { ...DEFAULT_FORMAT_OPTIONS.extraSections, contents: wantsContents },
   };
 }
 
@@ -83,7 +92,7 @@ export async function formatToBuffer(request: ComposeRequest): Promise<ComposedD
     : request.manuscript;
 
   const options: FormatOptions = {
-    ...suggestOptions(reference.profile),
+    ...suggestOptions(reference.profile, manuscript.analysis),
     ...request.options,
     roleStyles: { ...(request.options?.roleStyles ?? {}) },
     roleOverrides: { ...(request.options?.roleOverrides ?? {}) },

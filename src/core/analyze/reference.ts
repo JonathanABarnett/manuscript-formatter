@@ -1,6 +1,6 @@
 import { DocxPackage } from '../ooxml/package.js';
 import { NS, RELTYPE } from '../ooxml/ns.js';
-import { attr, child, children, descendants, numAttr, textOf } from '../ooxml/xml.js';
+import { attr, child, childVal, children, descendants, numAttr, textOf } from '../ooxml/xml.js';
 import type { DocxInput, PageSetup, ReferenceProfile, StyleRole } from '../types.js';
 import { STYLE_ROLES } from '../types.js';
 import { StyleSheet } from './styles.js';
@@ -50,6 +50,13 @@ export async function analyzeReference(input: DocxInput): Promise<LoadedReferenc
   const usage = countStyleUsage(facts, styles.defaultParagraphStyleId);
   const detection = detectRoles(styles, facts, usage, warnings);
 
+  const sectionLayout = readSectionLayout(
+    body,
+    facts,
+    sectPrs,
+    detection.roleStyles,
+    styles.defaultParagraphStyleId,
+  );
   const headerFooter = await inspectHeadersAndFooters(pkg, rels, sectPrs);
   const hasFootnotes = await documentHasFootnotes(pkg, rels);
 
@@ -96,6 +103,8 @@ export async function analyzeReference(input: DocxInput): Promise<LoadedReferenc
     ),
     chapterTitleBlanksBefore: detection.chapterTitleBlanksBefore,
     chapterTitleBlanksAfter: detection.chapterTitleBlanksAfter,
+    roleVAlign: sectionLayout.roleVAlign,
+    bodySectionIndex: sectionLayout.bodySectionIndex,
     usesFirstParagraphNoIndent: detection.usesFirstParagraphNoIndent,
     bodyFirstLineIndentTwips: bodyProps?.firstLineIndentTwips ?? null,
     hasHeaders: headerFooter.hasHeaders,
@@ -111,6 +120,81 @@ export async function analyzeReference(input: DocxInput): Promise<LoadedReferenc
   };
 
   return { pkg, documentDoc, body, styles, sectPrs, bodySectPr, frontSectPr, profile };
+}
+
+/**
+ * Which section each body paragraph belongs to. A paragraph carrying a
+ * `sectPr` is the *last* of its section, so the counter advances after it.
+ */
+function sectionIndexPerParagraph(body: Element): number[] {
+  let section = 0;
+  return children(body, 'p').map((p) => {
+    const here = section;
+    if (child(child(p, 'pPr'), 'sectPr')) section++;
+    return here;
+  });
+}
+
+/**
+ * Vertical placement per role, read from the section each role's paragraphs
+ * live in, plus the section the body matter starts in.
+ */
+function readSectionLayout(
+  body: Element,
+  facts: ParagraphFacts[],
+  sectPrs: Element[],
+  roleStyles: Record<StyleRole, string | null>,
+  defaultStyleId: string | null,
+): { roleVAlign: Partial<Record<StyleRole, string>>; bodySectionIndex: number } {
+  const sectionOf = sectionIndexPerParagraph(body);
+  const vAlignOf = (index: number): string | null =>
+    index < sectPrs.length ? childVal(sectPrs[index], 'vAlign') : null;
+
+  const roleVAlign: Partial<Record<StyleRole, string>> = {};
+  const interesting: StyleRole[] = ['frontMatterTitle', 'copyright', 'frontMatter', 'partTitle'];
+  for (const role of interesting) {
+    const styleId = roleStyles[role];
+    if (!styleId) continue;
+    const counts = new Map<string, number>();
+    facts.forEach((f, i) => {
+      if (f.isEmpty || (f.styleId ?? defaultStyleId) !== styleId) return;
+      const align = vAlignOf(sectionOf[i] ?? 0);
+      if (align) counts.set(align, (counts.get(align) ?? 0) + 1);
+    });
+    let best: string | null = null;
+    let bestCount = 0;
+    for (const [align, count] of counts) {
+      if (count > bestCount) {
+        best = align;
+        bestCount = count;
+      }
+    }
+    if (best) roleVAlign[role] = best;
+  }
+
+  return { roleVAlign, bodySectionIndex: findBodySection(sectPrs) };
+}
+
+const ROMAN_OR_LETTER = /^(lower|upper)(Roman|Letter)$/;
+
+/**
+ * The section the body matter runs in. Books number their front matter in
+ * roman numerals and restart at 1 in arabic where the body begins, so the
+ * first section that restarts in arabic is the body's.
+ *
+ * Style is no help here: a template uses its chapter-title style for
+ * "Dedication" and "Contents" as well, which are front matter.
+ */
+function findBodySection(sectPrs: Element[]): number {
+  const last = Math.max(0, sectPrs.length - 1);
+  for (let i = 0; i < sectPrs.length; i++) {
+    const pgNumType = child(sectPrs[i], 'pgNumType');
+    if (!pgNumType) continue;
+    if (attr(pgNumType, 'start') === null) continue;
+    const format = attr(pgNumType, 'fmt');
+    if (format === null || !ROMAN_OR_LETTER.test(format)) return i;
+  }
+  return last;
 }
 
 /** Section properties, both paragraph-level and the final body-level one. */

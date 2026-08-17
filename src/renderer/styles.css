@@ -1,42 +1,62 @@
+/*
+ * A printer's palette: ink and press-blue on a cool paper stock, with a single
+ * warm accent for the things the reader can act on. Deliberately its own
+ * identity rather than a generic warm-neutral template.
+ */
 :root {
-  --paper: #f7f5f0;
+  --paper: #eef1f5;
+  --paper-deep: #e3e8ef;
   --card: #ffffff;
-  --ink: #22201c;
-  --ink-soft: #5d574d;
-  --ink-faint: #8b8377;
-  --rule: #e0dbd1;
-  --rule-strong: #cdc6b8;
-  --accent: #7a4f2a;
-  --accent-soft: #f0e4d8;
-  --ok: #2f6b45;
-  --warn: #8a5b12;
-  --warn-bg: #fdf3df;
-  --danger: #96341f;
-  --danger-bg: #fbe9e4;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(34, 32, 28, 0.06), 0 6px 20px rgba(34, 32, 28, 0.05);
+  --ink: #10182a;
+  --ink-soft: #4a5568;
+  --ink-faint: #7c889c;
+  --rule: #dbe1ea;
+  --rule-strong: #bfc8d6;
+  --accent: #1d4ed8;
+  --accent-deep: #1739a8;
+  --accent-soft: #e3ebfd;
+  --gold: #b4530a;
+  --gold-soft: #fdefe0;
+  --ok: #0f7052;
+  --ok-soft: #dcf3ea;
+  --warn: #92600b;
+  --warn-bg: #fdf2da;
+  --danger: #a4232c;
+  --danger-bg: #fce8ea;
+  --radius: 12px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 42, 0.06);
+  --shadow: 0 1px 3px rgba(16, 24, 42, 0.07), 0 8px 24px rgba(16, 24, 42, 0.06);
+  --shadow-lg: 0 20px 50px rgba(16, 24, 42, 0.16);
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
-  --sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Inter, Roboto, Helvetica, Arial, sans-serif;
+  --sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Inter, Roboto,
+    Helvetica, Arial, sans-serif;
   --mono: "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #1b1a18;
-    --card: #24231f;
-    --ink: #ece7dd;
-    --ink-soft: #b6ada0;
-    --ink-faint: #8d8477;
-    --rule: #383530;
-    --rule-strong: #4a463f;
-    --accent: #d3a06b;
-    --accent-soft: #3a2f24;
-    --ok: #7fc196;
-    --warn: #e0b264;
-    --warn-bg: #33291a;
-    --danger: #e8907a;
-    --danger-bg: #3a231d;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.25);
+    --paper: #0d1220;
+    --paper-deep: #080c17;
+    --card: #161d2e;
+    --ink: #e8edf6;
+    --ink-soft: #a3aec2;
+    --ink-faint: #76839a;
+    --rule: #263044;
+    --rule-strong: #38455e;
+    --accent: #7ea6ff;
+    --accent-deep: #a5c0ff;
+    --accent-soft: #1b2740;
+    --gold: #e8a765;
+    --gold-soft: #33251a;
+    --ok: #4fc79b;
+    --ok-soft: #12302a;
+    --warn: #e2b35c;
+    --warn-bg: #2f2717;
+    --danger: #f08a92;
+    --danger-bg: #331a1f;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -55,22 +75,51 @@ body {
 }
 
 .masthead {
-  padding: 2.2rem 2.5rem 1.4rem;
-  border-bottom: 1px solid var(--rule);
+  padding: 2.6rem 2.5rem 2.2rem;
+  /* Fixed, not themed: the masthead is a dark band in both light and dark
+     mode, so it must not follow --ink, which inverts. */
+  background: linear-gradient(168deg, #101828 0%, #1b2440 58%, #24304f 100%);
+  color: #f2f5fb;
+  position: relative;
+  overflow: hidden;
+}
+
+/* A faint rule-and-margin motif, like a page grid seen through the paper. */
+.masthead::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 46px 100%;
+  mask-image: linear-gradient(90deg, transparent, #000 45%, transparent);
+  pointer-events: none;
 }
 
 .masthead h1 {
   font-family: var(--serif);
-  font-size: 1.9rem;
+  font-size: 2.15rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  margin: 0 0 0.35rem;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.4rem;
+  position: relative;
+}
+
+.masthead h1::before {
+  content: "";
+  position: absolute;
+  left: -1.1rem;
+  top: 0.28em;
+  bottom: 0.22em;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--gold);
 }
 
 .masthead p {
   margin: 0;
-  max-width: 62ch;
-  color: var(--ink-soft);
+  max-width: 64ch;
+  color: rgba(233, 238, 248, 0.82);
+  position: relative;
 }
 
 main {
@@ -79,35 +128,36 @@ main {
 }
 
 .step {
-  padding: 2rem 0 0.5rem;
-  border-bottom: 1px solid var(--rule);
+  padding: 2.2rem 0 0.75rem;
 }
 
-.step:last-of-type {
-  border-bottom: none;
+.step + .step {
+  border-top: 1px solid var(--rule);
 }
 
 .step h2 {
   font-family: var(--serif);
-  font-size: 1.25rem;
+  font-size: 1.42rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 0 0 1.1rem;
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.7rem;
 }
 
 .step-number {
   display: inline-grid;
   place-items: center;
-  width: 1.65rem;
-  height: 1.65rem;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
   font-family: var(--sans);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: 700;
+  box-shadow: var(--shadow-sm);
 }
 
 /* --- step 1: file pickers ------------------------------------------------ */
@@ -215,11 +265,26 @@ main {
 }
 
 .panel h3 {
-  font-size: 0.92rem;
+  font-size: 0.76rem;
   margin: 0 0 0.85rem;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
+  font-weight: 700;
   color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* A short gold tick before each panel title, echoing the masthead rule. */
+.panel > h3::before,
+.panel-head h3::before {
+  content: "";
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--gold);
+  flex: none;
 }
 
 .panel-head {
@@ -497,6 +562,55 @@ input[type="checkbox"] {
   max-width: 78ch;
 }
 
+.preflight-examples {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.preflight-example {
+  background: none;
+  border: none;
+  padding: 0.1rem 0;
+  font-family: var(--serif);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  max-width: 70ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  width: 100%;
+}
+
+.preflight-example:hover {
+  color: var(--accent);
+}
+
+/* Marks the row a preflight finding pointed at. */
+.block-row.flash {
+  animation: flash-row 1.6s ease-out;
+}
+
+@keyframes flash-row {
+  0%,
+  60% {
+    background: var(--accent-soft);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
 .preflight-footnote {
   margin: 0;
   padding-top: 0.8rem;
@@ -661,14 +775,15 @@ input[type="checkbox"] {
 
 .help-button {
   position: absolute;
-  top: 2.2rem;
+  top: 2.6rem;
   right: 2.5rem;
-  width: 2rem;
-  height: 2rem;
+  z-index: 1;
+  width: 2.1rem;
+  height: 2.1rem;
   border-radius: 50%;
-  border: 1.5px solid var(--rule-strong);
-  background: var(--card);
-  color: var(--ink-soft);
+  border: 1.5px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f5fb;
   font-size: 1rem;
   font-weight: 700;
   padding: 0;
@@ -677,8 +792,8 @@ input[type="checkbox"] {
 }
 
 .help-button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--gold);
+  color: var(--gold);
 }
 
 .how-it-works {
@@ -698,14 +813,33 @@ input[type="checkbox"] {
   background: var(--card);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  padding: 0.9rem 1rem 1rem;
+  padding: 1rem 1.1rem 1.1rem;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  counter-increment: how-step;
+}
+
+/* Numbered quietly in the corner, so the order reads without shouting. */
+.how-it-works li::after {
+  content: counter(how-step);
+  position: absolute;
+  top: 0.7rem;
+  right: 0.9rem;
+  font-family: var(--serif);
+  font-size: 1.3rem;
+  color: var(--rule-strong);
+  line-height: 1;
+}
+
+.how-it-works ol {
+  counter-reset: how-step;
 }
 
 .how-it-works svg {
   width: 44px;
   height: 37px;
   color: var(--accent);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.45rem;
 }
 
 .how-it-works h3 {
@@ -1305,10 +1439,20 @@ button:disabled {
 button.primary {
   background: var(--accent);
   color: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 42, 0.2), 0 6px 16px rgba(29, 78, 216, 0.24);
 }
 
 button.primary:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--accent-deep);
+}
+
+@media (prefers-color-scheme: dark) {
+  button.primary,
+  .step-number {
+    /* The accent lightens in dark mode, so its text must darken to match. */
+    color: #0d1220;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
 }
 
 button.secondary {

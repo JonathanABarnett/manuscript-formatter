@@ -32,6 +32,9 @@ afterAll(async () => {
 
 const PROSE = 'Insert chapter one text here. '.repeat(8).trim();
 
+/** Page geometry with no numbering of its own, so a test can set its own. */
+const PAGE_ONLY = DIGEST_SECTPR.replace('<w:pgNumType w:start="1"/>', '');
+
 /** A template shaped like Amazon's: prefixed names plus unused built-ins. */
 const KDP_LIKE: DocSpec = {
   sectPr: DIGEST_SECTPR,
@@ -161,6 +164,41 @@ describe('a real KDP interior template', () => {
     expect(analysis.chapterCount).toBe(2);
     expect(byText('Chapter One')?.role).toBe('chapterTitle');
     expect(byText('Chapter Two')?.role).toBe('chapterTitle');
+  });
+
+  it('reads where each kind of page sits on its sheet, and where the body starts', async () => {
+    // Amazon's template gives the copyright page its own section aligned to
+    // the foot of the page, and restarts numbering in arabic at the body.
+    const path = await writeDocx(join(dir, `t${counter++}.docx`), {
+      ...KDP_LIKE,
+      paragraphs: [
+        { text: 'Book Title', style: 'BookTitle' },
+        {
+          text: '',
+          style: 'BookTitle',
+          sectPr:
+            `<w:type w:val="nextPage"/>${PAGE_ONLY}<w:pgNumType w:fmt="lowerRoman"/>` +
+            '<w:vAlign w:val="center"/>',
+        },
+        { text: 'Copyright © 2025 Author Name', style: 'CopyPage' },
+        {
+          text: '',
+          style: 'CopyPage',
+          sectPr:
+            `<w:type w:val="nextPage"/>${PAGE_ONLY}<w:pgNumType w:fmt="lowerRoman"/>` +
+            '<w:vAlign w:val="bottom"/>',
+        },
+        ...KDP_LIKE.paragraphs.slice(4),
+      ],
+      // The final section is where the body runs, restarting at arabic 1.
+      sectPr: `${DIGEST_SECTPR}<w:pgNumType w:start="1"/>`,
+    });
+    const { profile } = await analyzeReference(await openDocx(path));
+
+    expect(profile.roleVAlign.frontMatterTitle).toBe('center');
+    expect(profile.roleVAlign.copyright).toBe('bottom');
+    // The body is the arabic-restarting section, not merely the last one.
+    expect(profile.bodySectionIndex).toBe(2);
   });
 
   it('lets the reviewer override how far a chapter title is pushed down', async () => {

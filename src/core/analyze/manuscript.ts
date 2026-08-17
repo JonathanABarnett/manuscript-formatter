@@ -77,6 +77,9 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
     imageCount: blocks.filter((b) => b.hasImage).length,
     footnoteCount: countFootnoteReferences(body),
     bodyStartIndex: blocks.findIndex((b) => b.role === 'chapterTitle' || b.role === 'partTitle'),
+    hasContentsPage: blocks.some(
+      (b) => !b.isEmpty && /^(table of )?contents$/i.test(b.text.trim()),
+    ),
     warnings,
   };
 

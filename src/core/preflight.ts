@@ -23,6 +23,11 @@ export interface PreflightCheck {
   title: string;
   /** What it means and what to do about it. */
   detail: string;
+  /**
+   * The paragraphs this is about, so the reviewer can be shown the actual
+   * place rather than having to hunt for it.
+   */
+  examples?: Array<{ index: number; preview: string }>;
 }
 
 export interface PreflightReport {
@@ -95,32 +100,34 @@ export function preflight(input: PreflightInput): PreflightReport {
     });
   }
 
-  const unsure = analysis.blocks.filter(
+  const unsureBlocks = analysis.blocks.filter(
     (b) => b.confidence < 0.6 && b.role !== 'body' && b.role !== 'empty',
-  ).length;
-  if (unsure > 0) {
+  );
+  if (unsureBlocks.length > 0) {
     add({
       id: 'uncertain',
       level: 'check',
-      title: `${unsure} line${unsure === 1 ? ' was' : 's were'} hard to place`,
+      title: `${unsureBlocks.length} line${unsureBlocks.length === 1 ? ' was' : 's were'} hard to place`,
       detail:
         'These are marked “not sure” in the list of chapters and headings. Glance at them and ' +
         'correct any that were read as the wrong kind of line.',
+      examples: examplesOf(unsureBlocks),
     });
   }
 
   // --- leftover template wording ------------------------------------------
-  const placeholders = analysis.blocks
-    .filter((b) => !b.isEmpty && PLACEHOLDER_PATTERNS.some((re) => re.test(b.text)))
-    .slice(0, 3);
+  const placeholders = analysis.blocks.filter(
+    (b) => !b.isEmpty && PLACEHOLDER_PATTERNS.some((re) => re.test(b.text)),
+  );
   if (placeholders.length > 0) {
     add({
       id: 'placeholder-text',
       level: 'attention',
-      title: 'Your manuscript still contains filler text',
+      title: `${placeholders.length} line${placeholders.length === 1 ? '' : 's'} still look like filler text`,
       detail:
-        `For example: “${placeholders[0].preview}”. This looks like wording from a template ` +
-        'that was never replaced. Fix it in your manuscript, then load it again.',
+        'This looks like wording from a template that was never replaced. Fix it in your ' +
+        'manuscript, then load it again.',
+      examples: examplesOf(placeholders),
     });
   }
 
@@ -202,29 +209,31 @@ export function preflight(input: PreflightInput): PreflightReport {
 
   const wideImages = analysis.blocks.filter(
     (b) => b.imageWidthTwips !== null && b.imageWidthTwips > textWidth,
-  ).length;
-  if (wideImages > 0) {
+  );
+  if (wideImages.length > 0) {
     add({
       id: 'wide-images',
       level: 'attention',
-      title: `${wideImages} picture${wideImages === 1 ? ' is' : 's are'} wider than the page allows`,
+      title: `${wideImages.length} picture${wideImages.length === 1 ? ' is' : 's are'} wider than the page allows`,
       detail:
         `Your text is about ${round(twipsToInches(textWidth))}" wide. Those pictures will spill ` +
         'past the margin. Resize them in Word after formatting, or before you load the manuscript.',
+      examples: examplesOf(wideImages),
     });
   }
 
   const wideTables = analysis.blocks.filter(
     (b) => b.tableWidthTwips !== null && b.tableWidthTwips > textWidth,
-  ).length;
-  if (wideTables > 0) {
+  );
+  if (wideTables.length > 0) {
     add({
       id: 'wide-tables',
       level: 'check',
-      title: `${wideTables} table${wideTables === 1 ? ' is' : 's are'} wider than the page`,
+      title: `${wideTables.length} table${wideTables.length === 1 ? ' is' : 's are'} wider than the page`,
       detail:
         'Tables are copied at their original size. Check them in Word and narrow any that run ' +
         'past the margin.',
+      examples: examplesOf(wideTables),
     });
   } else if (analysis.tableCount > 0) {
     add({
@@ -271,6 +280,17 @@ export function preflight(input: PreflightInput): PreflightReport {
 
 function round(inches: number): number {
   return Math.round(inches * 100) / 100;
+}
+
+/** A few of the offending paragraphs, enough to recognise without a wall. */
+function examplesOf(
+  blocks: ManuscriptAnalysis['blocks'],
+  limit = 4,
+): Array<{ index: number; preview: string }> {
+  return blocks.slice(0, limit).map((b) => ({
+    index: b.index,
+    preview: b.preview || (b.kind === 'table' ? '[table]' : '[picture]'),
+  }));
 }
 
 const ORDER: Record<CheckLevel, number> = { attention: 0, check: 1, ready: 2 };

@@ -140,7 +140,7 @@ function registerHandlers(): void {
       return {
         profile: reference.profile,
         analysis: manuscript.analysis,
-        suggestedOptions: suggestOptions(reference.profile),
+        suggestedOptions: suggestOptions(reference.profile, manuscript.analysis),
       };
     }),
   );

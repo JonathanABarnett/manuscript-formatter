@@ -49,7 +49,10 @@ export async function composeDocument(
 
   // Section properties must be captured before the body is emptied.
   const outSectPrs = collectSectPrs(outBody);
-  const bodySectPr = outSectPrs.length > 0 ? outSectPrs[outSectPrs.length - 1] : null;
+  // Not necessarily the last: a template gives each chapter its own section,
+  // and it is the first body section that restarts the page numbering.
+  const bodySectPr =
+    outSectPrs[reference.profile.bodySectionIndex] ?? outSectPrs[outSectPrs.length - 1] ?? null;
   const frontSectPrSource = outSectPrs.length > 1 ? outSectPrs[0] : null;
   const bodySectPrClone = bodySectPr ? (bodySectPr.cloneNode(true) as Element) : null;
   const frontSectPrClone = frontSectPrSource
@@ -126,11 +129,36 @@ export async function composeDocument(
     details: options.bookDetails,
     sections: options.extraSections,
   };
+  const frontTemplateSectPr = frontSectPrClone ?? bodySectPrClone;
   const generatedFront = buildFrontMatter(matterContext);
-  for (const p of generatedFront) outBody.appendChild(p);
-  stats.paragraphsWritten += generatedFront.length;
+  let lastParagraph: Element | null = null;
 
-  let lastParagraph: Element | null = generatedFront.at(-1) ?? null;
+  /**
+   * Close a run of front-matter paragraphs with its own section, so the page
+   * can sit where the template puts it — a copyright notice at the foot of
+   * the page, a title page centred — rather than all falling to the top.
+   */
+  const applyVAlign = (paragraph: Element | null, role: BlockRole): boolean => {
+    if (!paragraph || !frontTemplateSectPr) return false;
+    // Printed books set a copyright notice at the foot of its page. A design
+    // that says nothing is not asking for the top, it simply has no opinion.
+    const wanted =
+      reference.profile.roleVAlign[role as StyleRole] ?? (role === 'copyright' ? 'bottom' : undefined);
+    if (!wanted) return false;
+    const sectPr = frontTemplateSectPr.cloneNode(true) as Element;
+    setSectionType(sectPr, 'nextPage', outDoc);
+    setVerticalAlignment(sectPr, wanted, outDoc);
+    stripPageNumberRestart(sectPr);
+    attachSectPr(paragraph, sectPr, outDoc);
+    return true;
+  };
+
+  for (const page of generatedFront) {
+    for (const p of page.paragraphs) outBody.appendChild(p);
+    stats.paragraphsWritten += page.paragraphs.length;
+    lastParagraph = page.paragraphs.at(-1) ?? lastParagraph;
+    applyVAlign(lastParagraph, page.role);
+  }
   /**
    * Sections cloned from the reference's body section. Only the first may keep
    * the reference's `pgNumType` start value — otherwise every chapter would
@@ -139,6 +167,8 @@ export async function composeDocument(
   let bodySectionsEmitted = 0;
   let pendingPageBreak = false;
   let anyContentEmitted = generatedFront.length > 0;
+  /** The front-matter role currently being copied, for its section break. */
+  let lastFrontRole: BlockRole | null = null;
   let frontSectionPending = frontSectPrClone !== null && options.includeFrontMatter;
   let inFrontMatter = true;
 
@@ -167,6 +197,18 @@ export async function composeDocument(
     if (FRONT_MATTER_ROLES.has(role) && (!options.includeFrontMatter || options.replaceFrontMatter)) {
       continue;
     }
+
+    // A copied front-matter page gets the same vertical placement the
+    // template gives that kind of page, closing the run when the role changes.
+    if (
+      inFrontMatter &&
+      lastFrontRole !== null &&
+      role !== lastFrontRole &&
+      FRONT_MATTER_ROLES.has(lastFrontRole)
+    ) {
+      applyVAlign(lastParagraph, lastFrontRole);
+    }
+    if (FRONT_MATTER_ROLES.has(role)) lastFrontRole = role;
 
     const leavingFrontMatter = inFrontMatter && !FRONT_MATTER_ROLES.has(role);
     if (leavingFrontMatter) inFrontMatter = false;
@@ -606,6 +648,22 @@ function attachSectPr(p: Element, sectPr: Element, doc: Document): void {
   }
   if (child(pPr, 'sectPr')) return;
   pPr.appendChild(importNode(doc, sectPr));
+}
+
+/**
+ * Where a section's text sits vertically on its page. `w:vAlign` follows the
+ * column settings and precedes `w:titlePg` in the schema's sequence.
+ */
+function setVerticalAlignment(sectPr: Element, value: string, doc: Document): void {
+  const existing = child(sectPr, 'vAlign');
+  if (existing) {
+    existing.setAttributeNS(NS.w, 'w:val', value);
+    return;
+  }
+  const vAlign = wEl(doc, 'vAlign', { val: value });
+  const anchor = child(sectPr, 'titlePg') ?? child(sectPr, 'docGrid') ?? null;
+  if (anchor) sectPr.insertBefore(vAlign, anchor);
+  else sectPr.appendChild(vAlign);
 }
 
 /** `w:type` sits after the note properties and before `w:pgSz`. */

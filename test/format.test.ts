@@ -7,6 +7,7 @@ import { attr, child, children, descendants, textOf } from '../src/core/ooxml/xm
 import { analyzeManuscript } from '../src/core/analyze/manuscript.js';
 import { formatManuscript, suggestOutputPath } from '../src/core/platform/node.js';
 import { BOOK_TEMPLATE, loadDocx, openDocx, type ParaSpec, writeDocx } from './helpers/makeDocx.js';
+import { NO_EXTRA_SECTIONS } from '../src/core/types.js';
 
 const loadManuscript = async (path: string) => analyzeManuscript(await openDocx(path));
 
@@ -29,6 +30,10 @@ const PROSE_2 =
 const PROSE_3 =
   'Outside, past the glass, the square was emptying. Wind moved scraps of paper ' +
   'in slow circles, and the light had gone thin the way it does in November.';
+
+/** Opts out of the contents page that is offered by default, so these tests
+ *  assert on the manuscript's own paragraphs alone. */
+const PLAIN = { extraSections: NO_EXTRA_SECTIONS };
 
 const RAW_MANUSCRIPT: ParaSpec[] = [
   { runs: [{ text: 'The Sample Book', bold: true, fontSizePt: 20 }], alignment: 'center' },
@@ -139,6 +144,7 @@ describe('formatting a manuscript against a reference', () => {
       referencePath: paths.reference,
       manuscriptPath: paths.manuscript,
       outputPath: paths.output,
+      options: PLAIN,
     });
 
     const out = await readOutput(paths.output);
@@ -162,6 +168,7 @@ describe('formatting a manuscript against a reference', () => {
       referencePath: paths.reference,
       manuscriptPath: paths.manuscript,
       outputPath: paths.output,
+      options: PLAIN,
     });
 
     const { analysis } = await loadManuscript(paths.manuscript);
@@ -212,7 +219,7 @@ describe('formatting a manuscript against a reference', () => {
       referencePath: paths.reference,
       manuscriptPath: paths.manuscript,
       outputPath: paths.output,
-      options: { chapterStart: 'newPage' },
+      options: { ...PLAIN, chapterStart: 'newPage' },
     });
 
     const out = await readOutput(paths.output);
@@ -323,6 +330,7 @@ describe('formatting a manuscript against a reference', () => {
       referencePath: paths.reference,
       manuscriptPath: paths.manuscript,
       outputPath: paths.output,
+      options: PLAIN,
     });
 
     expect(result.stats.chapters).toBe(2);
