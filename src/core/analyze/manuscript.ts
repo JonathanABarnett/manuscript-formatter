@@ -7,6 +7,7 @@ import { StyleSheet } from './styles.js';
 import { readParagraph, type ParagraphFacts } from './paragraph.js';
 import { classifyParagraph, type ClassifyContext } from './classify.js';
 import { looksLikeCopyright } from './patterns.js';
+import { detectBookDetails } from './details.js';
 
 /** The manuscript, kept open so the composer can copy its runs verbatim. */
 export interface LoadedManuscript {
@@ -77,6 +78,7 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
     imageCount: blocks.filter((b) => b.hasImage).length,
     footnoteCount: countFootnoteReferences(body),
     bodyStartIndex: blocks.findIndex((b) => b.role === 'chapterTitle' || b.role === 'partTitle'),
+    detectedDetails: detectBookDetails(blocks),
     hasContentsPage: blocks.some(
       (b) => !b.isEmpty && /^(table of )?contents$/i.test(b.text.trim()),
     ),

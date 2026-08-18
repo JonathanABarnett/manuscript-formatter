@@ -247,6 +247,8 @@ export interface ManuscriptAnalysis {
   bodyStartIndex: number;
   /** The manuscript already carries a contents list of its own. */
   hasContentsPage: boolean;
+  /** Title, author and so on read out of the manuscript's own opening pages. */
+  detectedDetails: Partial<BookDetails>;
   warnings: string[];
 }
 
@@ -274,6 +276,8 @@ export interface FormatOptions {
   keepEmphasis: boolean;
   /** Include the manuscript's front matter in the output. */
   includeFrontMatter: boolean;
+  /** What the small line at the top of each page says. */
+  runningHeads: RunningHeads;
   /**
    * Blank lines above and below a chapter title, which is how a template sinks
    * a chapter opening down the page. Null follows whatever the template does.
@@ -315,6 +319,21 @@ export interface ExtraSections {
   bibliography: boolean;
 }
 
+/**
+ * The running heads. `auto` puts the book's title and author in place of a
+ * template's placeholder wording; `custom` sets them outright; `leave` does
+ * not touch what the design already says.
+ */
+export interface RunningHeads {
+  mode: 'auto' | 'custom' | 'leave';
+  /** Left-hand pages. Printed books usually carry the author here. */
+  verso: string;
+  /** Right-hand pages. Usually the book's title. */
+  recto: string;
+}
+
+export const DEFAULT_RUNNING_HEADS: RunningHeads = { mode: 'auto', verso: '', recto: '' };
+
 export const EMPTY_BOOK_DETAILS: BookDetails = {
   title: '',
   subtitle: '',
@@ -353,6 +372,7 @@ export const DEFAULT_FORMAT_OPTIONS: FormatOptions = {
   chapterSpaceBefore: null,
   chapterSpaceAfter: null,
   bookDetails: EMPTY_BOOK_DETAILS,
+  runningHeads: DEFAULT_RUNNING_HEADS,
   extraSections: NO_EXTRA_SECTIONS,
   replaceFrontMatter: false,
 };

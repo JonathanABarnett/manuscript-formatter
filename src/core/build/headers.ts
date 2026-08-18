@@ -1,7 +1,7 @@
 import { NS, RELTYPE } from '../ooxml/ns.js';
 import type { DocxPackage, Relationships } from '../ooxml/package.js';
 import { descendants, textOf } from '../ooxml/xml.js';
-import type { BookDetails } from '../types.js';
+import type { BookDetails, RunningHeads } from '../types.js';
 
 /**
  * Puts the author's own title and name into the running heads.
@@ -48,6 +48,41 @@ export function willReplaceRunningHead(text: string, details: BookDetails): bool
   return rule !== undefined && rule.value(details).trim().length > 0;
 }
 
+/**
+ * Replace every visible word in a header part with `text`, keeping the first
+ * run so the design's own font and size survive. An empty string clears it.
+ */
+async function setHeaderText(
+  pkg: DocxPackage,
+  partPath: string,
+  text: string,
+): Promise<boolean> {
+  const doc = await pkg.readXml(partPath);
+  if (!doc?.documentElement) return false;
+  const paragraphs = descendants(doc.documentElement, 'p').filter(
+    (p) => textOf(p).trim().length > 0 || descendants(p, 't').length > 0,
+  );
+  if (paragraphs.length === 0) return false;
+
+  let done = false;
+  for (const paragraph of paragraphs) {
+    const texts = descendants(paragraph, 't');
+    if (texts.length === 0) continue;
+    // A header holding a page-number field is left alone; replacing its text
+    // would strip the field and freeze the number.
+    if (descendants(paragraph, 'instrText').length > 0) continue;
+    const [first, ...rest] = texts;
+    while (first.firstChild) first.removeChild(first.firstChild);
+    if (!done && text) first.appendChild(doc.createTextNode(text));
+    first.setAttributeNS(NS.xml, 'xml:space', 'preserve');
+    for (const extra of rest) while (extra.firstChild) extra.removeChild(extra.firstChild);
+    done = true;
+  }
+  if (!done) return false;
+  pkg.writeXml(partPath, doc);
+  return true;
+}
+
 /** Keep the design's shouting: an all-caps placeholder stays all caps. */
 function matchCase(original: string, replacement: string): string {
   const letters = original.replace(/[^A-Za-z]/g, '');
@@ -68,8 +103,27 @@ export async function applyDetailsToRunningHeads(
   pkg: DocxPackage,
   rels: Relationships,
   details: BookDetails,
+  heads: RunningHeads,
+  /** Relationship id -> `w:type` of the header reference that points at it. */
+  headerSides: Map<string, string> = new Map(),
 ): Promise<HeaderRewriteResult> {
   const changed: string[] = [];
+  if (heads.mode === 'leave') return { changed };
+
+  // Set outright, rather than only correcting placeholder wording.
+  if (heads.mode === 'custom') {
+    for (const rel of rels.all()) {
+      if (rel.type !== RELTYPE.header) continue;
+      const side = headerSides.get(rel.id);
+      // `even` is the left-hand page; `default` carries the right-hand one.
+      const wanted = side === 'even' ? heads.verso : side === 'default' ? heads.recto : null;
+      if (wanted === null) continue;
+      const partPath = pkg.resolveTarget(pkg.documentPath, rel.target);
+      if (await setHeaderText(pkg, partPath, wanted.trim())) changed.push(partPath);
+    }
+    return { changed };
+  }
+
   const parts = rels
     .all()
     .filter((r) => r.type === RELTYPE.header || r.type === RELTYPE.footer)

@@ -1672,3 +1672,27 @@ button:focus-visible {
     grid-column: 2;
   }
 }
+
+/* --- page headers, inside the book details form ---------------------------- */
+
+.details-heads {
+  border-top: 1px solid var(--rule);
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+}
+
+.details-heads h4 {
+  margin: 0 0 0.2rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.details-heads .panel-hint {
+  margin: 0 0 0.7rem;
+}
+
+.details-heads .details-fields {
+  margin-top: 0.7rem;
+}

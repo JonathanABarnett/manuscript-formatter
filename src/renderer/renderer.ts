@@ -431,6 +431,13 @@ async function runAnalysis(): Promise<void> {
   }
 
   state.analysis = outcome.value;
+  // Most of these are already written somewhere in the manuscript. Filling
+  // them in saves retyping, and anything wrong can simply be corrected.
+  const detected = outcome.value.analysis.detectedDetails;
+  outcome.value.suggestedOptions.bookDetails = {
+    ...outcome.value.suggestedOptions.bookDetails,
+    ...detected,
+  };
   state.options = { ...outcome.value.suggestedOptions, roleStyles: {}, roleOverrides: {} };
   const found = outcome.value.analysis;
   const structureFound = [

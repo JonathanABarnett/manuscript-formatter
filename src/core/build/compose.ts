@@ -64,6 +64,16 @@ export async function composeDocument(
   const frontSectPrClone = frontSectPrSource
     ? (frontSectPrSource.cloneNode(true) as Element)
     : null;
+  // Which page side each header serves, read before the body is emptied.
+  const headerSides = new Map<string, string>();
+  for (const sectPr of outSectPrs) {
+    for (const ref of children(sectPr, 'headerReference')) {
+      const id = attr(ref, 'id', NS.r);
+      const type = attr(ref, 'type');
+      if (id && type && !headerSides.has(id)) headerSides.set(id, type);
+    }
+  }
+
   clearChildren(outBody);
 
   const outRels = await out.relsFor(out.documentPath);
@@ -356,7 +366,13 @@ export async function composeDocument(
 
   // Put the author's own title and name into the running heads, replacing a
   // template's placeholder wording. Skipped entirely when nothing was typed.
-  const headsChanged = await applyDetailsToRunningHeads(out, outRels, options.bookDetails);
+  const headsChanged = await applyDetailsToRunningHeads(
+    out,
+    outRels,
+    options.bookDetails,
+    options.runningHeads,
+    headerSides,
+  );
   if (headsChanged.changed.length > 0) stats.runningHeadsUpdated = headsChanged.changed.length;
 
   numbering.save();

@@ -110,6 +110,8 @@ export function renderDetailsForm(container: HTMLElement, ctx: DetailsContext): 
   for (const field of IDENTITY_FIELDS) identity.appendChild(textField(field, ctx));
   container.appendChild(identity);
 
+  container.appendChild(runningHeadsControl(ctx));
+
   const list = document.createElement('div');
   list.className = 'details-sections';
   const heading = document.createElement('h4');
@@ -234,4 +236,89 @@ function sectionRow(
     row.appendChild(warn);
   }
   return row;
+}
+
+/**
+ * What the small line at the top of each page says. Most designs ship with
+ * placeholder wording, so the default corrects it from the details above;
+ * an author who wants something else can set both sides outright.
+ */
+function runningHeadsControl(ctx: DetailsContext): HTMLElement {
+  const heads = ctx.options.runningHeads;
+  const wrap = document.createElement('div');
+  wrap.className = 'details-heads';
+
+  const heading = document.createElement('h4');
+  heading.textContent = 'Page headers';
+  wrap.appendChild(heading);
+
+  const hint = document.createElement('p');
+  hint.className = 'panel-hint';
+  hint.textContent =
+    'The small line printed at the top of each page. Printed books put the author on ' +
+    'left-hand pages and the book title on right-hand ones.';
+  wrap.appendChild(hint);
+
+  const select = document.createElement('select');
+  for (const [value, label] of [
+    ['auto', 'Use my title and author from above'],
+    ['custom', 'Say something else'],
+    ['leave', 'Leave whatever the design says'],
+  ] as const) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    option.selected = heads.mode === value;
+    select.appendChild(option);
+  }
+  select.addEventListener('change', () => {
+    ctx.options.runningHeads = {
+      ...ctx.options.runningHeads,
+      mode: select.value as typeof heads.mode,
+    };
+    ctx.onChange(false);
+  });
+
+  const row = document.createElement('div');
+  row.className = 'option-row';
+  const label = document.createElement('label');
+  label.textContent = 'Headers';
+  row.append(label, select);
+  wrap.appendChild(row);
+
+  if (heads.mode === 'custom') {
+    const fields = document.createElement('div');
+    fields.className = 'details-fields';
+    fields.append(
+      headField('Left-hand pages', heads.verso, ctx.options.bookDetails.author, (value) => {
+        ctx.options.runningHeads = { ...ctx.options.runningHeads, verso: value };
+        ctx.onChange(false);
+      }),
+      headField('Right-hand pages', heads.recto, ctx.options.bookDetails.title, (value) => {
+        ctx.options.runningHeads = { ...ctx.options.runningHeads, recto: value };
+        ctx.onChange(false);
+      }),
+    );
+    wrap.appendChild(fields);
+  }
+  return wrap;
+}
+
+function headField(
+  label: string,
+  value: string,
+  placeholder: string,
+  onInput: (value: string) => void,
+): HTMLElement {
+  const wrap = document.createElement('label');
+  wrap.className = 'details-field';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value;
+  input.placeholder = placeholder || 'leave empty for nothing';
+  input.addEventListener('input', () => onInput(input.value));
+  wrap.append(name, input);
+  return wrap;
 }

@@ -150,3 +150,48 @@ describe('where the contents page goes', () => {
     expect(contents).toBeLessThan(firstChapter);
   });
 });
+
+describe('setting the headers by hand', () => {
+  it('puts the author’s own wording on each side of the book', async () => {
+    const out = await formatToBuffer({
+      reference: asInput(await templateWithHeads(), 'design.docx'),
+      manuscript: asInput(await buildSampleManuscript(), 'sample.docx'),
+      options: {
+        bookDetails: DETAILS,
+        extraSections: NO_EXTRA_SECTIONS,
+        runningHeads: { mode: 'custom', verso: 'Hollis & Sons', recto: 'Part One' },
+      },
+    });
+
+    // header1 is the even (left) page, header2 the default (right) one.
+    expect(await headTexts(out.data)).toEqual(['Hollis & Sons', 'Part One']);
+  });
+
+  it('leaves the design alone when asked to', async () => {
+    const out = await formatToBuffer({
+      reference: asInput(await templateWithHeads(), 'design.docx'),
+      manuscript: asInput(await buildSampleManuscript(), 'sample.docx'),
+      options: {
+        bookDetails: DETAILS,
+        extraSections: NO_EXTRA_SECTIONS,
+        runningHeads: { mode: 'leave', verso: '', recto: '' },
+      },
+    });
+
+    expect(await headTexts(out.data)).toEqual(['AUTHOR NAME', 'BOOK TITLE']);
+    expect(out.stats.runningHeadsUpdated).toBe(0);
+  });
+});
+
+describe('reading the details out of the manuscript', () => {
+  it('finds the author and year an author already typed', async () => {
+    const { analyzeManuscript } = await import('../src/core/format.js');
+    const { analysis } = await analyzeManuscript(
+      asInput(await buildSampleManuscript(), 'sample.docx'),
+    );
+
+    expect(analysis.detectedDetails.author).toBe('A. N. Author');
+    expect(analysis.detectedDetails.copyrightYear).toBe('2026');
+    expect(analysis.detectedDetails.title).toBe('The Cartographer of Small Hours');
+  });
+});
