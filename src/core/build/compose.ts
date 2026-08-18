@@ -6,7 +6,13 @@ import type { LoadedReference } from '../analyze/reference.js';
 import { collectSectPrs } from '../analyze/reference.js';
 import type { LoadedManuscript } from '../analyze/manuscript.js';
 import { styleForRole } from '../roles.js';
-import { buildBackMatter, buildFrontMatter, needsFieldUpdate } from './matter.js';
+import {
+  buildBackMatter,
+  buildContentsPage,
+  buildFrontMatter,
+  needsFieldUpdate,
+} from './matter.js';
+import { applyDetailsToRunningHeads } from './headers.js';
 import { ResourceMigrator } from './resources.js';
 import { NumberingMerger } from './numbering.js';
 import { NoteMerger } from './notes.js';
@@ -119,6 +125,7 @@ export async function composeDocument(
     imagesCopied: 0,
     footnotesCopied: 0,
     blanksRemoved: 0,
+    runningHeadsUpdated: 0,
     wordCount: 0,
   };
 
@@ -131,6 +138,7 @@ export async function composeDocument(
   };
   const frontTemplateSectPr = frontSectPrClone ?? bodySectPrClone;
   const generatedFront = buildFrontMatter(matterContext);
+  let contentsPage = buildContentsPage(matterContext);
   let lastParagraph: Element | null = null;
 
   /**
@@ -212,6 +220,18 @@ export async function composeDocument(
 
     const leavingFrontMatter = inFrontMatter && !FRONT_MATTER_ROLES.has(role);
     if (leavingFrontMatter) inFrontMatter = false;
+
+    // A contents list is the last thing in the front matter, so it goes in
+    // once the manuscript's own opening pages are behind us — never ahead of
+    // the author's title page.
+    if (leavingFrontMatter && contentsPage) {
+      applyVAlign(lastParagraph, lastFrontRole ?? 'frontMatter');
+      for (const p of contentsPage.paragraphs) outBody.appendChild(p);
+      stats.paragraphsWritten += contentsPage.paragraphs.length;
+      lastParagraph = contentsPage.paragraphs.at(-1) ?? lastParagraph;
+      anyContentEmitted = true;
+      contentsPage = null;
+    }
 
     // Close the front-matter section on the last paragraph that belongs to it,
     // so the reference's own front/body section split is reproduced.
@@ -323,11 +343,21 @@ export async function composeDocument(
     await requestFieldUpdate(out, outRels);
   }
 
+  if (contentsPage) {
+    for (const p of contentsPage.paragraphs) outBody.appendChild(p);
+    stats.paragraphsWritten += contentsPage.paragraphs.length;
+  }
+
   if (bodySectPrClone) {
     // The final section only restarts numbering when it is the only one.
     if (bodySectionsEmitted > 0) stripPageNumberRestart(bodySectPrClone);
     outBody.appendChild(bodySectPrClone);
   }
+
+  // Put the author's own title and name into the running heads, replacing a
+  // template's placeholder wording. Skipped entirely when nothing was typed.
+  const headsChanged = await applyDetailsToRunningHeads(out, outRels, options.bookDetails);
+  if (headsChanged.changed.length > 0) stats.runningHeadsUpdated = headsChanged.changed.length;
 
   numbering.save();
   footnotes.save();

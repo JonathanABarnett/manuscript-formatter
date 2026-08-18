@@ -367,6 +367,8 @@ export interface FormatStats {
   footnotesCopied: number;
   blanksRemoved: number;
   wordCount: number;
+  /** Header or footer parts whose placeholder wording was replaced. */
+  runningHeadsUpdated: number;
 }
 
 export interface FormatResult {

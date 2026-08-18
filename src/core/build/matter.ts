@@ -194,14 +194,25 @@ export function buildFrontMatter(ctx: MatterContext): MatterPage[] {
     endPage('frontMatter');
   }
 
-  if (sections.contents) {
-    const breakBefore = startPage();
-    out.push(para(ctx, 'chapterTitle', 'Contents', { breakBefore }));
-    out.push(contentsField(ctx));
-    endPage('frontMatter');
-  }
-
+  // Contents is deliberately not built here. It belongs at the end of the
+  // front matter, after any title and copyright pages the manuscript carries
+  // of its own, so the composer places it when the body begins.
   return pages;
+}
+
+/**
+ * The contents page, which a printed book sets last in the front matter,
+ * immediately before the body begins. Null when it was not asked for.
+ */
+export function buildContentsPage(ctx: MatterContext): MatterPage | null {
+  if (!ctx.sections.contents) return null;
+  return {
+    role: 'frontMatter',
+    paragraphs: [
+      para(ctx, 'chapterTitle', 'Contents', { breakBefore: true }),
+      contentsField(ctx),
+    ],
+  };
 }
 
 /** The sections that close the book. */

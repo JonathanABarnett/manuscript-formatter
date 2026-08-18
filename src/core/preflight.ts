@@ -1,6 +1,7 @@
 import { twipsToInches } from './ooxml/ns.js';
 import { estimatePages, lineSpacingMultiple } from './pageEstimate.js';
 import { sectionHasContent } from './build/matter.js';
+import { willReplaceRunningHead } from './build/headers.js';
 import type {
   FormatOptions,
   ManuscriptAnalysis,
@@ -132,7 +133,23 @@ export function preflight(input: PreflightInput): PreflightReport {
     });
   }
 
-  const headerPlaceholder = profile.headerFooterText.filter((text) =>
+  // Headers the typed-in details will overwrite are not worth warning about.
+  const remainingHeads = profile.headerFooterText.filter(
+    (text) => !willReplaceRunningHead(text, options.bookDetails),
+  );
+  const replacedHeads = profile.headerFooterText.length - remainingHeads.length;
+  if (replacedHeads > 0) {
+    add({
+      id: 'headers-updated',
+      level: 'ready',
+      title: 'Your title and name go into the page headers',
+      detail:
+        `The design's placeholder wording is replaced on ${replacedHeads} of them, using the ` +
+        'details you typed in.',
+    });
+  }
+
+  const headerPlaceholder = remainingHeads.filter((text) =>
     PLACEHOLDER_PATTERNS.some((re) => re.test(text)),
   );
   if (headerPlaceholder.length > 0) {
@@ -144,13 +161,13 @@ export function preflight(input: PreflightInput): PreflightReport {
         `The top or bottom of every page reads “${headerPlaceholder[0]}”. Open the finished file ` +
         'in Word, double-click that area, and type your own book title and name.',
     });
-  } else if (profile.headerFooterText.length > 0) {
+  } else if (remainingHeads.length > 0) {
     add({
       id: 'header-text',
       level: 'check',
       title: 'Check the words in your page headers',
       detail:
-        `They currently read “${profile.headerFooterText.join('” / “')}”. If that is not your ` +
+        `They currently read “${remainingHeads.join('” / “')}”. If that is not your ` +
         'book title and name, change it in Word by double-clicking the top of a page.',
     });
   }
