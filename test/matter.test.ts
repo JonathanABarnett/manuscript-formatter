@@ -211,3 +211,43 @@ describe('the generated opening pages', () => {
     expect(text).toContain('All rights reserved');
   });
 });
+
+describe('the also-by and epigraph pages', () => {
+  it('sets earlier books before the title page and the epigraph after the dedication', async () => {
+    const { rows } = await build({
+      bookDetails: {
+        ...DETAILS,
+        alsoBy: 'The First Book\nThe Second Book',
+        epigraph: 'All that is gold does not glitter.\n— J. R. R. Tolkien',
+      },
+      extraSections: {
+        ...NO_EXTRA_SECTIONS,
+        alsoBy: true,
+        titlePage: true,
+        dedication: true,
+        epigraph: true,
+      },
+    });
+    const texts = rows.map((r) => r.text).filter(Boolean);
+    const at = (text: string) => texts.indexOf(text);
+    expect(at('Also by A. N. Author')).toBe(0);
+    expect(at('The First Book')).toBe(1);
+    expect(at('The Second Book')).toBe(2);
+    expect(at('The Cartographer of Small Hours')).toBe(3);
+    expect(at('For everyone who waited.')).toBeGreaterThan(at('The Cartographer of Small Hours'));
+    expect(at('All that is gold does not glitter.')).toBeGreaterThan(at('For everyone who waited.'));
+    expect(at('— J. R. R. Tolkien')).toBe(at('All that is gold does not glitter.') + 1);
+    // The epigraph uses the design's quotation style, and its source is set right.
+    const quote = rows.find((r) => r.text === 'All that is gold does not glitter.');
+    expect(quote?.style).toBe('BlockQuote');
+    expect(quote?.breaks).toBe(true);
+  });
+
+  it('adds neither page when nothing was typed for it', async () => {
+    const { text } = await build({
+      bookDetails: DETAILS,
+      extraSections: { ...NO_EXTRA_SECTIONS, alsoBy: true, epigraph: true },
+    });
+    expect(text).not.toContain('Also by');
+  });
+});

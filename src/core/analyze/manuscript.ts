@@ -1,13 +1,14 @@
 import { DocxPackage } from '../ooxml/package.js';
 import { RELTYPE } from '../ooxml/ns.js';
 import { NS } from '../ooxml/ns.js';
-import { attr, child, descendants } from '../ooxml/xml.js';
+import { attr, child, childVal, descendants, textOf } from '../ooxml/xml.js';
 import type { BlockRole, DocxInput, ManuscriptAnalysis, ManuscriptBlock } from '../types.js';
-import { StyleSheet } from './styles.js';
+import { StyleSheet, underlineOn } from './styles.js';
 import { readParagraph, type ParagraphFacts } from './paragraph.js';
 import { classifyParagraph, type ClassifyContext } from './classify.js';
 import { looksLikeCopyright } from './patterns.js';
 import { detectBookDetails } from './details.js';
+import { readPixelSize } from './imageSize.js';
 
 /** The manuscript, kept open so the composer can copy its runs verbatim. */
 export interface LoadedManuscript {
@@ -56,7 +57,8 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
 
   const rels = await pkg.relsFor(pkg.documentPath);
   const stylesTarget = rels.firstTargetOfType(RELTYPE.styles) ?? 'styles.xml';
-  const styles = new StyleSheet(await pkg.readXml(pkg.resolveTarget(pkg.documentPath, stylesTarget)));
+  const stylesDoc = await pkg.readXml(pkg.resolveTarget(pkg.documentPath, stylesTarget));
+  const styles = new StyleSheet(stylesDoc);
 
   const nodes = flattenBody(body);
   const facts: (ParagraphFacts | null)[] = nodes.map((node) =>
@@ -65,6 +67,8 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
 
   const warnings: string[] = [];
   const blocks = buildBlocks(nodes, facts, warnings);
+  const habits = countHabits(nodes, blocks, styles);
+  await measureImages(pkg, rels, nodes, blocks);
 
   const analysis: ManuscriptAnalysis = {
     fileName: input.name,
@@ -82,6 +86,8 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
     hasContentsPage: blocks.some(
       (b) => !b.isEmpty && /^(table of )?contents$/i.test(b.text.trim()),
     ),
+    ...habits,
+    language: detectLanguage(body, stylesDoc, styles),
     warnings,
   };
 
@@ -167,6 +173,7 @@ function buildBlocks(
       hasHyperlink: f.hasHyperlink,
       structuralMarker: structural,
       imageWidthTwips: f.hasImage ? imageWidthTwips(nodes[index]) : null,
+      imageMinDpi: null,
       tableWidthTwips: null,
       confidence,
       reasons,
@@ -209,10 +216,57 @@ function baseBlock(
     hasHyperlink: false,
     structuralMarker: false,
     imageWidthTwips: null,
+    imageMinDpi: null,
     tableWidthTwips: null,
     confidence,
     reasons,
   };
+}
+
+/** EMUs per inch, DrawingML's unit for picture extents. */
+const EMU_PER_INCH = 914400;
+
+/**
+ * Work out how sharply each picture will print: its pixels against the size
+ * it is placed at. Reads only the image headers, so a manuscript full of
+ * photographs costs little more to analyse than one without.
+ */
+async function measureImages(
+  pkg: DocxPackage,
+  rels: Awaited<ReturnType<DocxPackage['relsFor']>>,
+  nodes: Element[],
+  blocks: ManuscriptBlock[],
+): Promise<void> {
+  const sizes = new Map<string, { width: number; height: number } | null>();
+  const pixelSize = async (relId: string) => {
+    if (sizes.has(relId)) return sizes.get(relId) ?? null;
+    const rel = rels.byId(relId);
+    let size: { width: number; height: number } | null = null;
+    if (rel && !rel.targetMode) {
+      const bytes = await pkg.readBinary(pkg.resolveTarget(pkg.documentPath, rel.target));
+      if (bytes) size = readPixelSize(bytes);
+    }
+    sizes.set(relId, size);
+    return size;
+  };
+
+  for (const block of blocks) {
+    if (!block.hasImage) continue;
+    let minDpi: number | null = null;
+    for (const drawing of descendants(nodes[block.index], 'drawing')) {
+      const extent = descendants(drawing, 'extent', NS.wp)[0] ?? null;
+      const cx = Number(extent?.getAttribute('cx') ?? '');
+      const cy = Number(extent?.getAttribute('cy') ?? '');
+      const blip = descendants(drawing, 'blip', NS.a)[0] ?? null;
+      const relId = blip ? attr(blip, 'embed', NS.r) : null;
+      if (!relId || !(cx > 0) || !(cy > 0)) continue;
+      const size = await pixelSize(relId);
+      if (!size || size.width === 0 || size.height === 0) continue;
+      const dpi = Math.min(size.width / (cx / EMU_PER_INCH), size.height / (cy / EMU_PER_INCH));
+      minDpi = minDpi === null ? dpi : Math.min(minDpi, dpi);
+    }
+    block.imageMinDpi = minDpi === null ? null : Math.round(minDpi);
+  }
 }
 
 function contextFor(
@@ -402,6 +456,93 @@ function markCopyrightPages(blocks: ManuscriptBlock[], bodyStart: number): void 
       b.reasons = [...b.reasons, 'part of the copyright page'];
     }
   }
+}
+
+/** Roles whose runs are restyled wholesale, so their underlining never prints. */
+const HEADING_LIKE = new Set<BlockRole>([
+  'chapterTitle',
+  'partTitle',
+  'chapterSubtitle',
+  'subheading',
+  'frontMatterTitle',
+  'sceneBreak',
+]);
+
+/**
+ * How much of a typed manuscript's habit the text carries: underlined runs,
+ * straight quotes and apostrophes, and doubled spaces. Each is something an
+ * option can tidy, and the report quotes these counts so the author knows what
+ * turning it on would actually touch.
+ */
+function countHabits(
+  nodes: Element[],
+  blocks: ManuscriptBlock[],
+  styles: StyleSheet,
+): Pick<ManuscriptAnalysis, 'underlinedRunCount' | 'straightQuoteCount' | 'doubleSpaceCount'> {
+  let underlinedRunCount = 0;
+  let straightQuoteCount = 0;
+  let doubleSpaceCount = 0;
+  for (const block of blocks) {
+    if (block.kind !== 'paragraph' || block.isEmpty) continue;
+    straightQuoteCount += (block.text.match(/["']/g) ?? []).length;
+    doubleSpaceCount += (block.text.match(/ {2,}/g) ?? []).length;
+    if (HEADING_LIKE.has(block.role)) continue;
+    for (const run of descendants(nodes[block.index], 'r')) {
+      if (textOf(run).trim().length === 0) continue;
+      const rPr = child(run, 'rPr');
+      if (underlineOn(rPr)) {
+        underlinedRunCount++;
+        continue;
+      }
+      const styleId = childVal(rPr, 'rStyle');
+      if (styleId && styles.has(styleId) && styles.resolve(styleId).underline) underlinedRunCount++;
+    }
+  }
+  return { underlinedRunCount, straightQuoteCount, doubleSpaceCount };
+}
+
+/**
+ * The language most of the text is tagged with. Word writes `w:lang` on a run
+ * only when it differs from the style, so untagged text counts towards the
+ * document's default (the Normal style, then the document defaults). Weighted
+ * by text length so a stray foreign phrase does not decide it.
+ */
+function detectLanguage(body: Element, stylesDoc: Document | null, styles: StyleSheet): string | null {
+  const stylesRoot = stylesDoc?.documentElement ?? null;
+  const defaultLang =
+    (styles.defaultParagraphStyleId
+      ? styleLang(stylesRoot, styles.defaultParagraphStyleId)
+      : null) ??
+    attr(child(child(child(child(stylesRoot, 'docDefaults'), 'rPrDefault'), 'rPr'), 'lang'), 'val');
+
+  const weights = new Map<string, number>();
+  for (const run of descendants(body, 'r')) {
+    const length = textOf(run).length;
+    if (length === 0) continue;
+    const lang = attr(child(child(run, 'rPr'), 'lang'), 'val') ?? defaultLang;
+    if (!lang) continue;
+    weights.set(lang, (weights.get(lang) ?? 0) + length);
+  }
+  let best: string | null = null;
+  let bestWeight = 0;
+  for (const [lang, weight] of weights) {
+    if (weight > bestWeight) {
+      best = lang;
+      bestWeight = weight;
+    }
+  }
+  return best;
+}
+
+function styleLang(stylesRoot: Element | null, styleId: string): string | null {
+  if (!stylesRoot) return null;
+  for (let n = stylesRoot.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType !== 1) continue;
+    const el = n as Element;
+    if (el.localName !== 'style' || attr(el, 'styleId') !== styleId) continue;
+    return attr(child(child(el, 'rPr'), 'lang'), 'val');
+  }
+  return null;
 }
 
 function preview(text: string): string {

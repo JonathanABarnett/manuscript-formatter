@@ -229,3 +229,131 @@ describe('estimating how long the book will be', () => {
     expect(estimatePageCount({ ...profile, bodyFontSizePt: null }, analysis)).toBeNull();
   });
 });
+
+describe('KDP-specific checks', () => {
+  it('measures how sharply a picture will print and warns when it is placed too large', async () => {
+    const { buildDocx, pngHeader } = await import('./helpers/makeDocx.js');
+    const { analyzeManuscript } = await import('../src/core/analyze/manuscript.js');
+    const paragraphs = [
+      { text: 'Chapter One' },
+      { text: 'A picture follows.', image: true },
+    ];
+    // 300 pixels shown at one inch: exactly sharp enough.
+    const sharp = await analyzeManuscript({
+      data: await buildDocx({ paragraphs, image: true, imageBytes: pngHeader(300, 300) }),
+      name: 'sharp.docx',
+    });
+    expect(sharp.analysis.blocks[1].imageMinDpi).toBe(300);
+    // The same 300 pixels stretched over three inches: 100 dots per inch.
+    const soft = await analyzeManuscript({
+      data: await buildDocx({ paragraphs, image: true, imageBytes: pngHeader(300, 300), imageExtentEmu: 914400 * 3 }),
+      name: 'soft.docx',
+    });
+    expect(soft.analysis.blocks[1].imageMinDpi).toBe(100);
+
+    const { profile } = await analyzed();
+    const okReport = preflight({ profile, analysis: sharp.analysis, options: withOptions() });
+    expect(find(okReport, 'image-resolution')).toBeUndefined();
+    expect(find(okReport, 'image-resolution-ok')?.level).toBe('ready');
+    const softReport = preflight({ profile, analysis: soft.analysis, options: withOptions() });
+    expect(find(softReport, 'image-resolution')?.level).toBe('attention');
+    expect(find(softReport, 'image-resolution')?.detail).toContain('100 dots per inch');
+    expect(find(softReport, 'image-resolution')?.examples?.[0].index).toBe(1);
+  });
+
+  it('warns when the estimated length is outside what KDP prints', async () => {
+    const { profile, analysis } = await analyzed();
+    const tiny = { ...analysis, wordCount: 500 };
+    expect(find(preflight({ profile, analysis: tiny, options: withOptions() }), 'too-short')?.level).toBe('attention');
+    const huge = { ...analysis, wordCount: 600_000 };
+    expect(find(preflight({ profile, analysis: huge, options: withOptions() }), 'too-long')?.level).toBe('attention');
+    const novel = { ...analysis, wordCount: 80_000 };
+    expect(find(preflight({ profile, analysis: novel, options: withOptions() }), 'too-short')).toBeUndefined();
+    expect(find(preflight({ profile, analysis: novel, options: withOptions() }), 'too-long')).toBeUndefined();
+  });
+
+  it('checks the ISBN typed for the copyright page', async () => {
+    const { profile, analysis } = await analyzed();
+    const withIsbn = (isbn: string) =>
+      preflight({
+        profile,
+        analysis,
+        options: withOptions({
+          bookDetails: { ...EMPTY_BOOK_DETAILS, author: 'A. N. Author', copyrightYear: '2026', isbn },
+          extraSections: { ...NO_EXTRA_SECTIONS, copyrightPage: true },
+        }),
+      });
+    expect(find(withIsbn('978-0-306-40615-7'), 'isbn-ok')?.level).toBe('ready');
+    expect(find(withIsbn('0-306-40615-2'), 'isbn-ok')?.level).toBe('ready');
+    expect(find(withIsbn('978-0-306-40615-8'), 'isbn')?.level).toBe('attention');
+    expect(find(withIsbn('978-0-306-40615'), 'isbn')?.detail).toContain('wrong number of digits');
+    // Nothing to say when no ISBN was given.
+    expect(find(withIsbn(''), 'isbn')).toBeUndefined();
+    expect(find(withIsbn(''), 'isbn-ok')).toBeUndefined();
+  });
+
+  it('spots empty chapters and scene breaks with nothing on one side', async () => {
+    const { profile, analysis } = await analyzed();
+    const stub = (index: number, role: ManuscriptAnalysis['blocks'][number]['role'], text: string) => ({
+      ...analysis.blocks[0],
+      index,
+      role,
+      autoRole: role,
+      text,
+      preview: text,
+      isEmpty: false,
+    });
+    const odd: ManuscriptAnalysis = {
+      ...analysis,
+      blocks: [
+        stub(0, 'chapterTitle', 'Chapter One'),
+        stub(1, 'sceneBreak', '* * *'),
+        stub(2, 'body', 'Some text.'),
+        stub(3, 'sceneBreak', '* * *'),
+        stub(4, 'sceneBreak', '* * *'),
+        stub(5, 'body', 'More text.'),
+        stub(6, 'chapterTitle', 'Chapter Two'),
+        stub(7, 'chapterTitle', 'Chapter Three'),
+        stub(8, 'body', 'Text at last.'),
+        stub(9, 'sceneBreak', '* * *'),
+      ],
+    };
+    const report = preflight({ profile, analysis: odd, options: withOptions() });
+    expect(find(report, 'empty-chapters')?.examples?.map((e) => e.index)).toEqual([6]);
+    expect(find(report, 'stranded-scene-breaks')?.examples?.map((e) => e.index)).toEqual([1, 4, 9]);
+  });
+
+  it('says what the tidy-up options would touch, and confirms when they are on', async () => {
+    const { profile, analysis } = await analyzed();
+    const typed: ManuscriptAnalysis = {
+      ...analysis,
+      straightQuoteCount: 42,
+      doubleSpaceCount: 7,
+      underlinedRunCount: 3,
+    };
+    const off = preflight({
+      profile,
+      analysis: typed,
+      options: withOptions({ smartTypography: false, collapseMultipleSpaces: false, underlineToItalic: false }),
+    });
+    expect(find(off, 'straight-quotes')?.level).toBe('check');
+    expect(find(off, 'straight-quotes')?.title).toContain('42 straight quotes');
+    expect(find(off, 'double-spaces')?.title).toContain('7 places');
+    expect(find(off, 'underlining')?.title).toContain('3 underlined passages');
+
+    const on = preflight({
+      profile,
+      analysis: typed,
+      options: withOptions({ smartTypography: true, collapseMultipleSpaces: true, underlineToItalic: true }),
+    });
+    expect(find(on, 'straight-quotes')).toBeUndefined();
+    expect(find(on, 'straight-quotes-on')?.level).toBe('ready');
+    expect(find(on, 'double-spaces-on')?.level).toBe('ready');
+    expect(find(on, 'underlining-on')?.level).toBe('ready');
+
+    // A manuscript without those habits gets no note either way.
+    const clean = preflight({ profile, analysis, options: withOptions() });
+    expect(find(clean, 'straight-quotes')).toBeUndefined();
+    expect(find(clean, 'straight-quotes-on')).toBeUndefined();
+  });
+});

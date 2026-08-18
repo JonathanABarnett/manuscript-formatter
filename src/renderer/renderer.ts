@@ -1,5 +1,7 @@
 import { twipsToInches } from '../core/ooxml/ns.js';
 import {
+  CHAPTER_NUMBER_STYLES,
+  CHAPTER_NUMBER_STYLE_LABELS,
   DEFAULT_FORMAT_OPTIONS,
   ROLE_HINTS,
   ROLE_LABELS,
@@ -17,6 +19,7 @@ import { TYPICAL_NOVEL_WORDS } from '../core/pageEstimate.js';
 import { buildProofPage, renderPreviews, type PreviewContext } from './previews.js';
 import { renderDetailsForm } from './details.js';
 import { preflight, type CheckLevel, type PreflightReport } from '../core/preflight.js';
+import { applyChoices, parseChoices, serializeChoices } from '../core/choices.js';
 import { hasSeenTour, startTour } from './tour.js';
 
 interface State {
@@ -461,6 +464,52 @@ async function runAnalysis(): Promise<void> {
 
 // --- step 2: review ---------------------------------------------------------
 
+/** Every choice on the review screen, to a file the author names. */
+async function saveChoices(): Promise<void> {
+  if (!state.analysis) return;
+  const status = $('#choices-status');
+  const json = serializeChoices(state.options, state.analysis.analysis.blocks);
+  const base = baseName(state.manuscriptPath ?? 'book').replace(/\.docx$/i, '');
+  const saved = await window.formatter.saveChoices(`${base} (choices).json`, json);
+  status.textContent = saved
+    ? 'Saved. Load that file next time to get these same choices back.'
+    : '';
+}
+
+/**
+ * Bring back choices saved earlier, rebinding paragraph changes to the
+ * paragraphs of this draft by their words. Style choices that this design
+ * does not have are dropped rather than left pointing at nothing.
+ */
+async function loadChoices(): Promise<void> {
+  if (!state.analysis) return;
+  const status = $('#choices-status');
+  const json = await window.formatter.loadChoices();
+  if (json === null) return;
+  let applied;
+  try {
+    applied = applyChoices(parseChoices(json), state.analysis.analysis.blocks);
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err));
+    return;
+  }
+  const known = new Set(state.analysis.profile.styles.map((s) => s.id));
+  const roleStyles: FormatOptions['roleStyles'] = {};
+  for (const [role, id] of Object.entries(applied.options.roleStyles) as Array<[StyleRole, string | null]>) {
+    if (id === null || known.has(id)) roleStyles[role] = id;
+  }
+  state.options = { ...applied.options, roleStyles };
+  renderReview();
+  updateResetButton();
+  const changes = applied.matched + applied.unmatched;
+  status.textContent =
+    changes === 0
+      ? 'Loaded your saved choices.'
+      : applied.unmatched === 0
+        ? `Loaded your saved choices. All ${changes} paragraph change${changes === 1 ? '' : 's'} found ${changes === 1 ? 'its' : 'their'} paragraph in this draft.`
+        : `Loaded your saved choices. ${applied.matched} of ${changes} paragraph changes found their paragraph in this draft; the other ${applied.unmatched} ${applied.unmatched === 1 ? 'line has' : 'lines have'} changed or gone, so check the list of chapters and headings.`;
+}
+
 function renderReview(): void {
   if (!state.analysis) return;
   renderReviewWarnings(state.analysis.profile, state.analysis.analysis);
@@ -660,6 +709,29 @@ function renderOptions(): void {
     refreshPreviews();
   });
 
+  const chapterNumbers = el('select', { id: 'opt-chapter-numbers' });
+  for (const style of CHAPTER_NUMBER_STYLES) {
+    chapterNumbers.appendChild(
+      el(
+        'option',
+        { value: style, selected: o.chapterNumberStyle === style },
+        CHAPTER_NUMBER_STYLE_LABELS[style],
+      ),
+    );
+  }
+  chapterNumbers.addEventListener('change', () => {
+    o.chapterNumberStyle = chapterNumbers.value as FormatOptions['chapterNumberStyle'];
+    refreshPreviews();
+    renderPreflight();
+  });
+
+  const renumber = el('input', { type: 'checkbox', checked: o.renumberChapters });
+  renumber.addEventListener('change', () => {
+    o.renumberChapters = renumber.checked;
+    refreshPreviews();
+    renderPreflight();
+  });
+
   const sceneBreak = el('input', {
     type: 'text',
     value: o.sceneBreakText ?? '',
@@ -738,14 +810,50 @@ function renderOptions(): void {
       spacing('chapterSpaceAfter', profile?.chapterTitleBlanksAfter ?? 0),
     ),
     row(
+      hinted(
+        'Chapter numbers',
+        'Rewrites the number in each chapter title. A title after the number, and chapters with no number, are left as they are.',
+      ),
+      chapterNumbers,
+      'Makes every chapter opening match. Spelled-out numbers are written in English.',
+    ),
+    el(
+      'div',
+      { class: 'option-row' },
+      el(
+        'label',
+        {},
+        renumber,
+        ' ',
+        'Renumber chapters in order',
+        el(
+          'span',
+          { class: 'option-note' },
+          'Numbers the chapters 1, 2, 3… as they appear, however they are numbered now. Useful after moving chapters around.',
+        ),
+      ),
+    ),
+    row(
       el('span', {}, 'Mark used between scenes'),
       sceneBreak,
       'Replaces whatever you used — # or *** — everywhere at once.',
     ),
     checkbox(
+      'chapterOpenerNoHeader',
+      'No running head on chapter-opening pages',
+      profile?.hasHeaders
+        ? 'Printed books start each chapter on a clean page: no header line, though a page number at the foot of the page stays.'
+        : 'Your design has no page headers, so this makes no difference to it.',
+    ),
+    checkbox(
       'firstParagraphNoIndent',
       "Don't indent the first paragraph",
       'Printed books normally start a chapter, and each new scene, hard against the margin.',
+    ),
+    checkbox(
+      'leadInSmallCaps',
+      'Open each chapter with small capitals',
+      'Sets the first few words of every chapter in small capitals, a traditional touch that marks where the text begins.',
     ),
     checkbox(
       'removeEmptyParagraphs',
@@ -760,12 +868,26 @@ function renderOptions(): void {
     checkbox(
       'keepEmphasis',
       'Keep italics, bold, and other emphasis',
-      'Keeps emphasis such as italics, bold, underlining, and small capitals.',
+      'Keeps emphasis such as italics, bold, and small capitals. Turn it off only if you want the design’s plain text everywhere.',
+    ),
+    checkbox(
+      'underlineToItalic',
+      'Set underlined words in italics',
+      state.analysis?.analysis.underlinedRunCount
+        ? `Typed manuscripts underline what a printed book sets in italics. Yours has ${state.analysis.analysis.underlinedRunCount.toLocaleString()} underlined passage${state.analysis.analysis.underlinedRunCount === 1 ? '' : 's'}.`
+        : 'Typed manuscripts underline what a printed book sets in italics. Yours has none, so this changes nothing.',
     ),
     checkbox(
       'includeFrontMatter',
       'Include front matter',
       'Keeps material before the first chapter, such as the title, copyright, dedication, or epigraph.',
+    ),
+    checkbox(
+      'hyphenate',
+      'Let Word hyphenate words at line ends',
+      profile?.bodyJustified
+        ? 'Your design justifies the text, so without hyphenation Word has to stretch the spaces between words. Printed books hyphenate.'
+        : 'Your design sets the text ragged-right, so this is a matter of taste. It keeps the right edge more even.',
     ),
     checkbox(
       'smartTypography',
@@ -1376,6 +1498,8 @@ export function init(): void {
 
   $('#change-output').addEventListener('click', () => void chooseOutput());
   $('#run-format').addEventListener('click', () => void runFormat());
+  $('#save-choices').addEventListener('click', () => void saveChoices());
+  $('#load-choices').addEventListener('click', () => void loadChoices());
 
   const showAll = $<HTMLInputElement>('#show-all-blocks');
   showAll.addEventListener('change', () => {

@@ -227,3 +227,46 @@ describe('manuscript classification', () => {
     expect(analysis.blocks[0].structuralMarker).toBe(false);
   });
 });
+
+describe('structural markers in other languages', () => {
+  it('reads chapter, part, front-matter and back-matter labels in the common languages', async () => {
+    const { labelKind, standaloneNumber } = await import('../src/core/analyze/patterns.js');
+    expect(labelKind('Capítulo 3')).toBe('chapter');
+    expect(labelKind('CAPÍTULO TRES')).toBe('chapter');
+    expect(labelKind('Chapitre premier')).toBe('chapter');
+    expect(labelKind('Kapitel 12')).toBe('chapter');
+    expect(labelKind('Capitolo Uno')).toBe('chapter');
+    expect(labelKind('Hoofdstuk 4')).toBe('chapter');
+    expect(labelKind('Parte II')).toBe('part');
+    expect(labelKind('Deuxième partie')).toBeNull(); // the label must open the line
+    expect(labelKind('Prólogo')).toBe('frontMatter');
+    expect(labelKind('Índice')).toBe('frontMatter');
+    expect(labelKind('Table des matières')).toBe('frontMatter');
+    expect(labelKind('Inhaltsverzeichnis')).toBe('frontMatter');
+    expect(labelKind('Epílogo')).toBe('backMatter');
+    expect(labelKind('Remerciements')).toBe('backMatter');
+    expect(labelKind('Über den Autor')).toBe('backMatter');
+    expect(labelKind('Sull’autore')).toBe('backMatter');
+    expect(labelKind('Agradecimentos')).toBe('backMatter');
+    // Not fooled by a longer word that merely starts the same way.
+    expect(labelKind('Captain Blood')).toBeNull();
+    expect(labelKind('Chapters of Sand')).toBeNull();
+    expect(labelKind('Partenaires')).toBeNull();
+    expect(standaloneNumber('Siete').match).toBe(true);
+    expect(standaloneNumber('Zwölf').match).toBe(true);
+    expect(standaloneNumber('Vingt-deux').match).toBe(true);
+  });
+
+  it('classifies a Spanish manuscript the same way as an English one', async () => {
+    expect(
+      await roles({
+        paragraphs: [
+          { text: 'CAPÍTULO UNO', alignment: 'center' },
+          { text: PROSE_1 },
+          { text: 'Capítulo dos', alignment: 'center' },
+          { text: PROSE_2 },
+        ],
+      }),
+    ).toEqual(['chapterTitle', 'bodyFirst', 'chapterTitle', 'bodyFirst']);
+  });
+});

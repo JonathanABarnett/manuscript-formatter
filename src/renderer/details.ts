@@ -52,6 +52,14 @@ interface SectionSpec {
 
 const SECTIONS: SectionSpec[] = [
   {
+    key: 'alsoBy',
+    label: 'Also by this author',
+    hint: 'A list of your earlier books, on the page before the title page.',
+    textKey: 'alsoBy',
+    textLabel: 'Earlier books',
+    placeholder: 'One title per line.',
+  },
+  {
     key: 'titlePage',
     label: 'Title page',
     hint: 'Your title, subtitle and name, on a page of their own.',
@@ -68,6 +76,14 @@ const SECTIONS: SectionSpec[] = [
     textKey: 'dedication',
     textLabel: 'Dedication',
     placeholder: 'For everyone who waited.',
+  },
+  {
+    key: 'epigraph',
+    label: 'Epigraph',
+    hint: 'A short quotation to open the book, after the dedication.',
+    textKey: 'epigraph',
+    textLabel: 'Epigraph',
+    placeholder: 'The quotation, then who said it on the last line.',
   },
   {
     key: 'contents',

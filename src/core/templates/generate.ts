@@ -382,11 +382,16 @@ export async function buildTemplate(trimId: string, lookId: string): Promise<Uin
       '</w:styles>',
   );
 
-  // Mirrored margins make the gutter swap sides on facing pages.
+  // Mirrored margins make the gutter swap sides on facing pages. Justified
+  // text is hyphenated so the word spacing stays even, with capitals left
+  // whole and no more than two hyphenated line ends in a row.
   zip.file(
     'word/settings.xml',
     XML_DECL +
       `<w:settings xmlns:w="${NS.w}"><w:mirrorMargins/><w:defaultTabStop w:val="720"/>` +
+      (look.justified
+        ? '<w:autoHyphenation/><w:consecutiveHyphenLimit w:val="2"/><w:doNotHyphenateCaps/>'
+        : '') +
       '<w:characterSpacingControl w:val="compressPunctuation"/></w:settings>',
   );
 

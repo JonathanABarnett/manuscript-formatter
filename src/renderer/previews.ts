@@ -1,5 +1,5 @@
 import { twipsToInches } from '../core/ooxml/ns.js';
-import { styleForRole, type RoleStyleMap } from '../core/roles.js';
+import { chapterTitleTexts, leadInLength, styleForRole, type RoleStyleMap } from '../core/roles.js';
 import { sectionHasContent } from '../core/build/matter.js';
 import {
   type BlockRole,
@@ -37,6 +37,8 @@ interface PreviewLine {
   imageWidthTwips?: number | null;
   /** Which manuscript block this came from, for highlighting one of them. */
   blockIndex?: number;
+  /** Characters at the start set in small capitals, for a chapter's lead-in. */
+  leadIn?: number;
 }
 
 /**
@@ -51,7 +53,7 @@ export function buildProofPage(ctx: PreviewContext, blockIndex: number): HTMLEle
 
   const lines = [
     ...contentNear(ctx, at, -1, 2).reverse(),
-    lineFrom(block, ctx.options),
+    lineFrom(block, ctx),
     ...contentNear(ctx, at, 1, 2),
   ];
   return page(lines, ctx, blockIndex);
@@ -65,14 +67,25 @@ function isDrawable(block: ManuscriptBlock): boolean {
   return block.kind === 'paragraph' && (!block.isEmpty || block.hasImage);
 }
 
-function lineFrom(block: ManuscriptBlock, options: FormatOptions): PreviewLine {
+function lineFrom(block: ManuscriptBlock, ctx: PreviewContext): PreviewLine {
   return {
-    role: roleOf(block, options),
-    text: block.text.trim(),
+    role: roleOf(block, ctx.options),
+    text: retitled(ctx).get(block.index) ?? block.text.trim(),
     image: block.isEmpty && block.hasImage,
     imageWidthTwips: block.imageWidthTwips,
     blockIndex: block.index,
   };
+}
+
+/** Chapter titles as the numbering options will write them, per context. */
+const retitledCache = new WeakMap<PreviewContext, Map<number, string>>();
+function retitled(ctx: PreviewContext): Map<number, string> {
+  let map = retitledCache.get(ctx);
+  if (!map) {
+    map = chapterTitleTexts(ctx.blocks, (b) => roleOf(b, ctx.options), ctx.options);
+    retitledCache.set(ctx, map);
+  }
+  return map;
 }
 
 interface SectionSpec {
@@ -214,7 +227,7 @@ function linesFor(ctx: PreviewContext, roles: BlockRole[], limit: number): Previ
   for (const block of ctx.blocks) {
     if (!isDrawable(block)) continue;
     if (!wanted.has(roleOf(block, ctx.options))) continue;
-    out.push(lineFrom(block, ctx.options));
+    out.push(lineFrom(block, ctx));
     if (out.length >= limit) break;
   }
   return out.length > 0 ? out : null;
@@ -229,7 +242,7 @@ function aroundRole(ctx: PreviewContext, role: BlockRole): PreviewLine[] | null 
 
   return [
     ...contentNear(ctx, index, -1, 2).reverse(),
-    lineFrom(ctx.blocks[index], ctx.options),
+    lineFrom(ctx.blocks[index], ctx),
     ...contentNear(ctx, index, 1, role === 'listItem' ? 3 : 2),
   ];
 }
@@ -247,7 +260,7 @@ function contentNear(
     if (!isDrawable(block)) continue;
     const role = roleOf(block, ctx.options);
     if (role === 'empty' || role === 'pageBreak') continue;
-    out.push(lineFrom(block, ctx.options));
+    out.push(lineFrom(block, ctx));
   }
   return out;
 }
@@ -268,9 +281,17 @@ function buildChapterOpening(ctx: PreviewContext): PreviewLine[] | null {
 
   const lines: PreviewLine[] = [];
   for (let i = 0; i < before; i++) lines.push({ role: 'chapterTitle', text: '', blank: true });
-  lines.push(lineFrom(ctx.blocks[index], ctx.options));
+  lines.push(lineFrom(ctx.blocks[index], ctx));
   for (let i = 0; i < after; i++) lines.push({ role: 'chapterTitle', text: '', blank: true });
-  lines.push(...contentNear(ctx, index, 1, 5));
+  const opening = contentNear(ctx, index, 1, 5);
+  // The first paragraph after the title (and any subtitle) takes the lead-in.
+  if (ctx.options.leadInSmallCaps) {
+    const first = opening.find((l) => l.role !== 'chapterSubtitle');
+    if (first && (first.role === 'bodyFirst' || first.role === 'body') && !first.image) {
+      first.leadIn = leadInLength(first.text);
+    }
+  }
+  lines.push(...opening);
   return lines;
 }
 
@@ -387,7 +408,14 @@ function paragraph(
     return node;
   }
   const text = line.text.length > MAX_CHARS ? `${line.text.slice(0, MAX_CHARS)}…` : line.text;
-  node.textContent = text;
+  if (line.leadIn && line.leadIn > 0 && line.leadIn <= text.length) {
+    const lead = document.createElement('span');
+    lead.style.fontVariantCaps = 'small-caps';
+    lead.textContent = text.slice(0, line.leadIn);
+    node.append(lead, document.createTextNode(text.slice(line.leadIn)));
+  } else {
+    node.textContent = text;
+  }
   return node;
 }
 

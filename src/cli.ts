@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { readFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import {
   analyzeDocumentPaths,
   formatManuscript,
+  readDocxFile,
   suggestOutputPath,
 } from './core/platform/node.js';
+import { analyzeManuscript } from './core/format.js';
+import { applyChoices, parseChoices } from './core/choices.js';
 import { inchLabel } from './core/analyze/pageSize.js';
 import {
+  CHAPTER_NUMBER_STYLES,
   STYLE_ROLES,
+  type ChapterNumberStyle,
   type ChapterStartMode,
   type FormatOptions,
   type StyleRole,
@@ -27,7 +33,13 @@ Arguments
   output.docx       Where to write. Defaults to "<manuscript> (formatted).docx".
 
 Options
+  --settings <file>        Apply choices saved from the app's review screen
+                           (book details, extra pages, running heads, every
+                           option below, and per-paragraph changes). Flags
+                           given alongside override what the file says.
   --chapter-start <mode>   newPage (default), oddPage, or continuous
+  --chapter-numbers <s>    ${CHAPTER_NUMBER_STYLES.join(', ')}
+  --renumber               Number the chapters 1, 2, 3 and so on, in order
   --scene-break <text>     Replace scene-break ornaments with this text
   --style <role>=<id>      Force a role onto a reference style. Repeatable.
                            Roles: ${STYLE_ROLES.join(', ')}
@@ -35,6 +47,9 @@ Options
   --keep-blanks            Keep blank paragraphs instead of relying on styles
   --keep-indents           Keep tabs and spaces typed as first-line indents
   --no-emphasis            Drop bold and italic from the manuscript text
+  --lead-in-caps           Open each chapter with its first words in small capitals
+  --keep-underline         Print underlining as underlining, not italics
+  --no-hyphenate           Do not ask Word to hyphenate at line ends
   --smart-quotes           Convert " to curly quotes, -- to em dashes
   --collapse-spaces        Collapse runs of spaces to one
   --plan                   Analyze and print the plan without writing a file
@@ -51,13 +66,19 @@ function parse(): Cli {
   return parseArgs({
     allowPositionals: true,
     options: {
+      settings: { type: 'string' },
       'chapter-start': { type: 'string' },
+      'chapter-numbers': { type: 'string' },
+      renumber: { type: 'boolean' },
       'scene-break': { type: 'string' },
       style: { type: 'string', multiple: true },
       'no-front-matter': { type: 'boolean' },
       'keep-blanks': { type: 'boolean' },
       'keep-indents': { type: 'boolean' },
       'no-emphasis': { type: 'boolean' },
+      'lead-in-caps': { type: 'boolean' },
+      'keep-underline': { type: 'boolean' },
+      'no-hyphenate': { type: 'boolean' },
       'smart-quotes': { type: 'boolean' },
       'collapse-spaces': { type: 'boolean' },
       plan: { type: 'boolean' },
@@ -78,11 +99,23 @@ function buildOptions(values: Record<string, unknown>): Partial<FormatOptions> {
     options.chapterStart = mode as ChapterStartMode;
   }
 
+  const numbers = values['chapter-numbers'] as string | undefined;
+  if (numbers !== undefined) {
+    if (!(CHAPTER_NUMBER_STYLES as string[]).includes(numbers)) {
+      throw new Error(`--chapter-numbers must be one of ${CHAPTER_NUMBER_STYLES.join(', ')} (got "${numbers}")`);
+    }
+    options.chapterNumberStyle = numbers as ChapterNumberStyle;
+  }
+  if (values.renumber) options.renumberChapters = true;
+
   if (values['scene-break'] !== undefined) options.sceneBreakText = values['scene-break'] as string;
   if (values['no-front-matter']) options.includeFrontMatter = false;
   if (values['keep-blanks']) options.removeEmptyParagraphs = false;
   if (values['keep-indents']) options.removeManualIndents = false;
   if (values['no-emphasis']) options.keepEmphasis = false;
+  if (values['lead-in-caps']) options.leadInSmallCaps = true;
+  if (values['keep-underline']) options.underlineToItalic = false;
+  if (values['no-hyphenate']) options.hyphenate = false;
   if (values['smart-quotes']) options.smartTypography = true;
   if (values['collapse-spaces']) options.collapseMultipleSpaces = true;
 
@@ -117,7 +150,26 @@ async function main(): Promise<number> {
 
   const referencePath = resolve(positionals[0]);
   const manuscriptPath = resolve(positionals[1]);
-  const options = buildOptions(values);
+  let options = buildOptions(values);
+
+  // A saved-choices file supplies everything the review screen offers; flags
+  // typed alongside it win over what it says.
+  if (typeof values.settings === 'string') {
+    const saved = parseChoices(await readFile(resolve(values.settings), 'utf8'));
+    const { analysis } = await analyzeManuscript(await readDocxFile(manuscriptPath));
+    const applied = applyChoices(saved, analysis.blocks);
+    if (applied.unmatched > 0 && !values.json) {
+      console.error(
+        `${applied.unmatched} of the saved paragraph changes did not match a paragraph in this ` +
+          'manuscript and were skipped.',
+      );
+    }
+    options = {
+      ...applied.options,
+      ...options,
+      roleStyles: { ...applied.options.roleStyles, ...options.roleStyles },
+    };
+  }
 
   if (values.plan) {
     const { profile, analysis, suggestedOptions } = await analyzeDocumentPaths(

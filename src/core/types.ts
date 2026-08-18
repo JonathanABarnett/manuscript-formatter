@@ -139,6 +139,7 @@ export interface StyleInfo {
   italic: boolean;
   allCaps: boolean;
   smallCaps: boolean;
+  underline: boolean;
 }
 
 /** Everything learned from the reference document. */
@@ -181,6 +182,10 @@ export interface ReferenceProfile {
   /** Visible words inherited from referenced header/footer parts, excluding bare page numbers. */
   headerFooterText: string[];
   hasFootnotes: boolean;
+  /** The design asks Word to hyphenate at line ends (`w:autoHyphenation`). */
+  hyphenates: boolean;
+  /** The body style sets its text justified, where hyphenation matters most. */
+  bodyJustified: boolean;
   defaultParagraphStyleId: string | null;
   bodyFontName: string | null;
   bodyFontSizePt: number | null;
@@ -225,6 +230,12 @@ export interface ManuscriptBlock {
   structuralMarker: boolean;
   /** Widest picture in this block, in twips. Null when it holds none. */
   imageWidthTwips: number | null;
+  /**
+   * The lowest effective resolution among the block's pictures — its pixels
+   * divided by the size it is set at — in dots per inch. Null when it holds
+   * none, or when their pixel size could not be read.
+   */
+  imageMinDpi: number | null;
   /** Declared width of a table block, in twips. Null when it does not say. */
   tableWidthTwips: number | null;
   /** 0..1 — how sure the classifier is. Low values are surfaced for review. */
@@ -249,10 +260,47 @@ export interface ManuscriptAnalysis {
   hasContentsPage: boolean;
   /** Title, author and so on read out of the manuscript's own opening pages. */
   detectedDetails: Partial<BookDetails>;
+  /**
+   * Habits of a typed manuscript that the options can tidy: underlined
+   * passages (italics in waiting), straight quotes and apostrophes, and runs
+   * of two or more spaces. Counted so the report can say what turning an
+   * option on would actually change.
+   */
+  underlinedRunCount: number;
+  straightQuoteCount: number;
+  doubleSpaceCount: number;
+  /**
+   * The language the manuscript's text is tagged with (`w:lang`), when it
+   * says. Carried into the output so Word hyphenates and spell-checks in the
+   * right language.
+   */
+  language: string | null;
   warnings: string[];
 }
 
 export type ChapterStartMode = 'newPage' | 'oddPage' | 'continuous';
+
+/**
+ * How chapter numbers are written: as the author typed them, or made uniform
+ * as "Chapter One", "Chapter 1", "One" or "1". Spelled-out numbers are English.
+ */
+export type ChapterNumberStyle = 'keep' | 'chapterWords' | 'chapterDigits' | 'words' | 'digits';
+
+export const CHAPTER_NUMBER_STYLES: ChapterNumberStyle[] = [
+  'keep',
+  'chapterWords',
+  'chapterDigits',
+  'words',
+  'digits',
+];
+
+export const CHAPTER_NUMBER_STYLE_LABELS: Record<ChapterNumberStyle, string> = {
+  keep: 'Leave them as written',
+  chapterWords: 'Chapter One, Chapter Two…',
+  chapterDigits: 'Chapter 1, Chapter 2…',
+  words: 'One, Two, Three…',
+  digits: '1, 2, 3…',
+};
 
 export interface FormatOptions {
   /** Role -> style id. Merged over the detected reference mapping. */
@@ -260,8 +308,27 @@ export interface FormatOptions {
   /** Per-block role overrides, keyed by block index. */
   roleOverrides: Record<number, BlockRole>;
   chapterStart: ChapterStartMode;
+  /**
+   * Leave the running head off the first page of each chapter, as printed
+   * books do. Each chapter then gets its own section so Word can treat that
+   * page as a first page; a page number set in the footer stays.
+   */
+  chapterOpenerNoHeader: boolean;
+  /** How chapter numbers are written in the finished book. */
+  chapterNumberStyle: ChapterNumberStyle;
+  /**
+   * Number the chapters 1, 2, 3… in the order they appear, whatever numbers
+   * they carry now. Chapters with no number (a prologue) are left alone and
+   * are not counted.
+   */
+  renumberChapters: boolean;
   /** Apply the no-indent style to the first paragraph after a break. */
   firstParagraphNoIndent: boolean;
+  /**
+   * Set the opening words of each chapter's first paragraph in small
+   * capitals, a traditional touch that marks the start of the text.
+   */
+  leadInSmallCaps: boolean;
   /** Drop blank paragraphs; book spacing comes from the styles instead. */
   removeEmptyParagraphs: boolean;
   /** Strip leading tabs/spaces used as manual first-line indents. */
@@ -274,8 +341,18 @@ export interface FormatOptions {
   sceneBreakText: string | null;
   /** Keep bold/italic/etc. from the manuscript runs. */
   keepEmphasis: boolean;
+  /**
+   * Set underlined passages in italics instead. Typed manuscripts underline
+   * what a printed book sets in italics; underlining itself is rarely wanted.
+   */
+  underlineToItalic: boolean;
   /** Include the manuscript's front matter in the output. */
   includeFrontMatter: boolean;
+  /**
+   * Ask Word to hyphenate at line ends. Justified text without it leaves
+   * uneven gaps between words, which is the surest sign of an amateur interior.
+   */
+  hyphenate: boolean;
   /** What the small line at the top of each page says. */
   runningHeads: RunningHeads;
   /**
@@ -303,16 +380,22 @@ export interface BookDetails {
   copyrightYear: string;
   publisher: string;
   isbn: string;
+  /** Earlier books, one title per line, for an "Also by" page. */
+  alsoBy: string;
   dedication: string;
+  /** A short quotation to open the book, its source on the last line. */
+  epigraph: string;
   acknowledgments: string;
   aboutTheAuthor: string;
   bibliography: string;
 }
 
 export interface ExtraSections {
+  alsoBy: boolean;
   titlePage: boolean;
   copyrightPage: boolean;
   dedication: boolean;
+  epigraph: boolean;
   contents: boolean;
   acknowledgments: boolean;
   aboutTheAuthor: boolean;
@@ -341,16 +424,20 @@ export const EMPTY_BOOK_DETAILS: BookDetails = {
   copyrightYear: '',
   publisher: '',
   isbn: '',
+  alsoBy: '',
   dedication: '',
+  epigraph: '',
   acknowledgments: '',
   aboutTheAuthor: '',
   bibliography: '',
 };
 
 export const NO_EXTRA_SECTIONS: ExtraSections = {
+  alsoBy: false,
   titlePage: false,
   copyrightPage: false,
   dedication: false,
+  epigraph: false,
   contents: false,
   acknowledgments: false,
   aboutTheAuthor: false,
@@ -361,14 +448,20 @@ export const DEFAULT_FORMAT_OPTIONS: FormatOptions = {
   roleStyles: {},
   roleOverrides: {},
   chapterStart: 'newPage',
+  chapterOpenerNoHeader: false,
+  chapterNumberStyle: 'keep',
+  renumberChapters: false,
   firstParagraphNoIndent: true,
+  leadInSmallCaps: false,
   removeEmptyParagraphs: true,
   removeManualIndents: true,
   collapseMultipleSpaces: false,
   smartTypography: false,
   sceneBreakText: null,
   keepEmphasis: true,
+  underlineToItalic: true,
   includeFrontMatter: true,
+  hyphenate: true,
   chapterSpaceBefore: null,
   chapterSpaceAfter: null,
   bookDetails: EMPTY_BOOK_DETAILS,

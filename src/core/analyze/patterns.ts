@@ -28,18 +28,54 @@ export function isSceneBreakText(text: string): boolean {
 
 export type LabelKind = 'chapter' | 'part' | 'frontMatter' | 'backMatter';
 
+/**
+ * The words that open a structural heading, in English and the other
+ * languages self-published books most often arrive in — Spanish, French,
+ * German, Italian, Portuguese and Dutch. `\b` is ASCII-only in JavaScript,
+ * so words ending in an accented letter are followed by an explicit check
+ * for end-of-word instead.
+ */
+const END = String.raw`(?![\p{L}\p{N}])`;
+const label = (words: string): RegExp => new RegExp(`^(?:${words})${END}`, 'iu');
+
 const LABEL_PATTERNS: Array<{ kind: LabelKind; re: RegExp }> = [
-  { kind: 'part', re: /^(part|volume|book)\b(?!\s*(one|two)?\s*$)?/i },
-  { kind: 'chapter', re: /^(chapter|chap\.?|ch\.?|section|interlude|episode|canto|scene)\b/i },
+  {
+    kind: 'part',
+    re: label('part|volume|book|parte|partie|teil|deel|libro|livre|buch|tomo|tome|boek'),
+  },
+  {
+    kind: 'chapter',
+    re: label(
+      'chapter|chap\\.?|ch\\.?|section|interlude|episode|canto|scene|' +
+        'cap[íi]tulo|cap\\.?|chapitre|kapitel|kap\\.?|capitolo|hoofdstuk|secci[óo]n|sezione|abschnitt|' +
+        'interludio|intermède|zwischenspiel|episodio|épisode|episódio|aflevering|escena|scène|szene',
+    ),
+  },
   {
     // "Copyright" is deliberately absent: a copyright *notice* opens with it
     // and is body text of the copyright page, not a heading over one.
     kind: 'frontMatter',
-    re: /^(title page|half title|contents|table of contents|dedication|epigraph|foreword|preface|introduction|prologue|author'?s note|a note (on|from)|praise for)\b/i,
+    re: label(
+      'title page|half title|contents|table of contents|dedication|epigraph|foreword|preface|introduction|prologue|author[’\']?s note|a note (?:on|from)|praise for|' +
+        'portada|portadilla|[íi]ndice|contenido|tabla de contenidos?|dedicatoria|ep[íi]grafe|pr[óo]logo|prefacio|introducci[óo]n|nota del autor|nota de la autora|' +
+        'page de titre|table des mati[èe]res|sommaire|d[ée]dicace|[ée]pigraphe|pr[ée]face|avant-propos|note de l[’\']auteur|' +
+        'titelseite|inhalt|inhaltsverzeichnis|widmung|motto|vorwort|einleitung|einf[üu]hrung|prolog|anmerkung des autors|' +
+        'frontespizio|indice|sommario|dedica|epigrafe|prefazione|introduzione|prologo|nota dell[’\']autore|' +
+        'folha de rosto|sum[áa]rio|dedicat[óo]ria|pref[áa]cio|introdu[çc][ãa]o|nota do autor|nota da autora|' +
+        'titelpagina|inhoud|inhoudsopgave|opdracht|voorwoord|inleiding|proloog|woord vooraf',
+    ),
   },
   {
     kind: 'backMatter',
-    re: /^(epilogue|afterword|appendix|appendices|glossary|notes?|endnotes|bibliography|works cited|further reading|index|acknowledge?ments?|about the author|also by|discussion questions|reading group guide|colophon)\b/i,
+    re: label(
+      'epilogue|afterword|appendix|appendices|glossary|notes?|endnotes|bibliography|works cited|further reading|index|acknowledge?ments?|about the author|also by|discussion questions|reading group guide|colophon|' +
+        'ep[íi]logo|ap[ée]ndices?|glosario|notas|bibliograf[íi]a|agradecimientos|sobre (?:el|la) autora?|acerca (?:del|de la) autora?|tambi[ée]n de|otros libros de|' +
+        '[ée]pilogue|postface|annexes?|glossaire|bibliographie|remerciements|[àa] propos de l[’\']auteur|du m[êe]me auteur|' +
+        'epilog|nachwort|anhang|glossar|anmerkungen|literaturverzeichnis|danksagung|[üu]ber (?:den|die) autor(?:in)?|vom selben autor|' +
+        'epilogo|postfazione|appendice|glossario|note|bibliografia|ringraziamenti|sull[’\']autore|sull[’\']autrice|dello stesso autore|' +
+        'ep[íi]logo|posf[áa]cio|ap[êe]ndices?|gloss[áa]rio|agradecimentos|sobre (?:o|a) autora?|do mesmo autor|' +
+        'epiloog|nawoord|bijlagen?|verklarende woordenlijst|noten|bibliografie|dankwoord|over de auteur|van dezelfde auteur',
+    ),
   },
 ];
 
@@ -58,6 +94,31 @@ const NUMBER_WORDS = new Set([
   'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
   'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety',
   'hundred',
+  // Spanish
+  'uno', 'una', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez',
+  'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'dieciseis', 'diecisiete',
+  'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidós', 'veintidos', 'treinta',
+  'cuarenta', 'cincuenta',
+  // French
+  'un', 'une', 'deux', 'trois', 'quatre', 'cinq', 'sept', 'huit', 'neuf', 'dix', 'onze',
+  'douze', 'treize', 'quatorze', 'quinze', 'seize', 'vingt', 'trente', 'quarante', 'cinquante',
+  // German
+  'eins', 'zwei', 'drei', 'vier', 'fünf', 'fuenf', 'sechs', 'sieben', 'acht', 'neun', 'zehn',
+  'elf', 'zwölf', 'zwoelf', 'dreizehn', 'vierzehn', 'fünfzehn', 'sechzehn', 'siebzehn',
+  'achtzehn', 'neunzehn', 'zwanzig', 'dreißig', 'dreissig', 'vierzig', 'fünfzig',
+  // Italian
+  'due', 'tre', 'quattro', 'cinque', 'sei', 'sette', 'otto', 'nove', 'dieci', 'undici',
+  'dodici', 'tredici', 'quattordici', 'quindici', 'sedici', 'diciassette', 'diciotto',
+  'diciannove', 'venti', 'trenta', 'quaranta', 'cinquanta',
+  // Portuguese
+  'um', 'dois', 'duas', 'três', 'tres', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove',
+  'dez', 'onze', 'doze', 'treze', 'catorze', 'quatorze', 'quinze', 'dezesseis', 'dezasseis',
+  'dezessete', 'dezassete', 'dezoito', 'dezenove', 'dezanove', 'vinte', 'trinta', 'quarenta',
+  'cinquenta',
+  // Dutch
+  'een', 'één', 'twee', 'drie', 'vier', 'vijf', 'zes', 'zeven', 'acht', 'negen', 'tien',
+  'elf', 'twaalf', 'dertien', 'veertien', 'vijftien', 'zestien', 'zeventien', 'achttien',
+  'negentien', 'twintig', 'dertig', 'veertig', 'vijftig',
 ]);
 
 const ROMAN_RE = /^[ivxlcdm]+$/i;

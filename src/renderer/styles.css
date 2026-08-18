@@ -1202,6 +1202,33 @@ input[type="checkbox"] {
   max-width: 68ch;
 }
 
+/* Save / load the review-screen choices for a revised draft. */
+.choices-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.8rem;
+  margin: -0.4rem 0 1.4rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.choices-bar .choices-hint {
+  flex: 1 1 32ch;
+  color: var(--ink-soft);
+}
+
+.choices-bar .status {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.choices-bar .status:empty {
+  display: none;
+}
+
 .picker-note {
   margin: 1rem 0 0;
   color: var(--ink-faint);

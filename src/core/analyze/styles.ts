@@ -19,6 +19,7 @@ export interface ResolvedStyleProps {
   italic: boolean;
   allCaps: boolean;
   smallCaps: boolean;
+  underline: boolean;
   outlineLevel: number | null;
 }
 
@@ -39,6 +40,7 @@ const EMPTY_PROPS: ResolvedStyleProps = {
   italic: false,
   allCaps: false,
   smallCaps: false,
+  underline: false,
   outlineLevel: null,
 };
 
@@ -216,6 +218,7 @@ export function propsFrom(pPr: Element | null, rPr: Element | null): ResolvedSty
     italic: toggleOn(rPr, 'i'),
     allCaps: toggleOn(rPr, 'caps'),
     smallCaps: toggleOn(rPr, 'smallCaps'),
+    underline: underlineOn(rPr),
     outlineLevel: outline !== null && Number.isFinite(Number(outline)) ? Number(outline) : null,
   };
 }
@@ -242,7 +245,16 @@ function mergeProps(base: ResolvedStyleProps, over: ResolvedStyleProps): Resolve
     italic: over.italic || base.italic,
     allCaps: over.allCaps || base.allCaps,
     smallCaps: over.smallCaps || base.smallCaps,
+    underline: over.underline || base.underline,
   };
+}
+
+/** `w:u` is on unless its value says `none`; a bare element means single. */
+export function underlineOn(rPr: Element | null): boolean {
+  const u = child(rPr, 'u');
+  if (!u) return false;
+  const val = attr(u, 'val');
+  return val === null || val.toLowerCase() !== 'none';
 }
 
 /** Style id applied to a `w:p`, or null when it uses the document default. */

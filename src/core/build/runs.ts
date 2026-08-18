@@ -1,6 +1,6 @@
 import { NS } from '../ooxml/ns.js';
 import { attr, child, importNode, wEl } from '../ooxml/xml.js';
-import type { StyleSheet } from '../analyze/styles.js';
+import { underlineOn, type StyleSheet } from '../analyze/styles.js';
 
 /**
  * Run properties that carry meaning rather than appearance. Everything else
@@ -51,6 +51,8 @@ export interface CopyOptions {
   referenceStyles: StyleSheet;
   /** Keep bold/italic/etc. from the manuscript. */
   keepEmphasis: boolean;
+  /** Set underlined passages in italics, as a printed book would. */
+  underlineToItalic: boolean;
   /** Strip tabs and spaces used as a manual first-line indent. */
   removeManualIndents: boolean;
   transformer: TextTransformer;
@@ -176,7 +178,13 @@ function sanitizeRunProps(source: Element | null, opts: CopyOptions): Element | 
   const doc = opts.targetDoc;
 
   const rStyleId = child(source, 'rStyle') ? attr(child(source, 'rStyle'), 'val') : null;
-  let implied: { bold: boolean; italic: boolean; caps: boolean; smallCaps: boolean } | null = null;
+  let implied: {
+    bold: boolean;
+    italic: boolean;
+    caps: boolean;
+    smallCaps: boolean;
+    underline: boolean;
+  } | null = null;
   if (rStyleId) {
     if (opts.referenceStyles.has(rStyleId)) {
       kept.push(wEl(doc, 'rStyle', { val: rStyleId }));
@@ -187,23 +195,32 @@ function sanitizeRunProps(source: Element | null, opts: CopyOptions): Element | 
         italic: props.italic,
         caps: props.allCaps,
         smallCaps: props.smallCaps,
+        underline: props.underline,
       };
     }
   }
 
+  // Underlining in a manuscript is the typist's italic. Turning it into the
+  // real thing means dropping `w:u` and making sure `w:i` is there instead;
+  // an explicit `w:u w:val="none"` is a cancellation and implies nothing.
+  const underlined = opts.underlineToItalic && opts.keepEmphasis && underlineOn(source);
+
   for (const name of KEPT_RUN_PROPS) {
     if (name === 'rStyle') continue;
     if (!opts.keepEmphasis && EMPHASIS_ONLY.has(name)) continue;
+    if (name === 'u' && opts.underlineToItalic) continue;
     const el = child(source, name);
     if (el) kept.push(importNode(doc, el));
   }
 
-  if (implied && opts.keepEmphasis) {
+  if (opts.keepEmphasis) {
     const present = new Set(kept.map((el) => el.localName));
-    if (implied.bold && !present.has('b')) kept.push(wEl(doc, 'b'));
-    if (implied.italic && !present.has('i')) kept.push(wEl(doc, 'i'));
-    if (implied.caps && !present.has('caps')) kept.push(wEl(doc, 'caps'));
-    if (implied.smallCaps && !present.has('smallCaps')) kept.push(wEl(doc, 'smallCaps'));
+    const wantItalic =
+      underlined || (implied?.italic ?? false) || (opts.underlineToItalic && (implied?.underline ?? false));
+    if (implied?.bold && !present.has('b')) kept.push(wEl(doc, 'b'));
+    if (wantItalic && !present.has('i')) kept.push(wEl(doc, 'i'));
+    if (implied?.caps && !present.has('caps')) kept.push(wEl(doc, 'caps'));
+    if (implied?.smallCaps && !present.has('smallCaps')) kept.push(wEl(doc, 'smallCaps'));
   }
 
   if (kept.length === 0) return null;

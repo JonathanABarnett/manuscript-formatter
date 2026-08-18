@@ -208,5 +208,44 @@ export const webBridge: FormatterApi = {
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
   },
 
+  saveChoices: async (suggestedName, json) => {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = suggestedName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    return true;
+  },
+
+  loadChoices: () =>
+    new Promise<string | null>((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,application/json';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      let settled = false;
+      const finish = (value: string | null): void => {
+        if (settled) return;
+        settled = true;
+        input.remove();
+        resolve(value);
+      };
+      input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        if (!file) return finish(null);
+        file.text().then(finish, () => finish(null));
+      });
+      input.addEventListener('cancel', () => finish(null));
+      window.addEventListener('focus', () => window.setTimeout(() => finish(null), 400), {
+        once: true,
+      });
+      input.click();
+    }),
+
   pathForFile: (file) => remember(file),
 };

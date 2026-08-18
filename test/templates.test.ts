@@ -17,9 +17,9 @@ const asInput = (data: Uint8Array, name: string): DocxInput => ({ data, name });
 const TWIPS_PER_INCH = 1440;
 
 describe('the built-in book designs', () => {
-  it('offers three sizes and three looks, with a recommended default', () => {
-    expect(TRIM_SIZES).toHaveLength(3);
-    expect(BOOK_LOOKS).toHaveLength(3);
+  it('offers five sizes and four looks, with a recommended default', () => {
+    expect(TRIM_SIZES).toHaveLength(5);
+    expect(BOOK_LOOKS).toHaveLength(4);
     expect(TRIM_SIZES.filter((t) => t.recommended)).toHaveLength(1);
     expect(TRIM_SIZES.find((t) => t.recommended)?.id).toBe('6x9');
   });
@@ -31,8 +31,8 @@ describe('the built-in book designs', () => {
         const { profile } = await analyzeReference(asInput(data, `${trim.id}-${look.id}.docx`));
 
         // Page geometry survives the round trip exactly.
-        expect(profile.pageSetup.widthTwips).toBe(trim.widthIn * TWIPS_PER_INCH);
-        expect(profile.pageSetup.heightTwips).toBe(trim.heightIn * TWIPS_PER_INCH);
+        expect(profile.pageSetup.widthTwips).toBe(Math.round(trim.widthIn * TWIPS_PER_INCH));
+        expect(profile.pageSetup.heightTwips).toBe(Math.round(trim.heightIn * TWIPS_PER_INCH));
         expect(profile.pageSetup.margins.gutter).toBe(GUTTER_IN * TWIPS_PER_INCH);
         expect(profile.pageSetup.mirrorMargins).toBe(true);
 
@@ -119,7 +119,7 @@ describe('the sample manuscript', () => {
 
       // The output keeps the chosen trim size and its page-number footer.
       const pgSz = child(child(body, 'sectPr'), 'pgSz');
-      expect(attr(pgSz, 'w')).toBe(String(trim.widthIn * TWIPS_PER_INCH));
+      expect(attr(pgSz, 'w')).toBe(String(Math.round(trim.widthIn * TWIPS_PER_INCH)));
       const rels = await pkg.relsFor(pkg.documentPath);
       expect(rels.all().some((r) => r.type.endsWith('/footer'))).toBe(true);
 

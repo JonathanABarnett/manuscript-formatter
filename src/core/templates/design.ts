@@ -27,7 +27,7 @@ export interface TrimSize {
  */
 export const GUTTER_IN = 0.5;
 
-/** The three paperback sizes that cover most self-published fiction. */
+/** The paperback sizes that cover most self-published fiction. */
 export const TRIM_SIZES: TrimSize[] = [
   {
     id: '6x9',
@@ -47,13 +47,30 @@ export const TRIM_SIZES: TrimSize[] = [
     margins: { top: 0.75, bottom: 0.75, outside: 0.6, inside: 0.6 },
   },
   {
+    id: '5.25x8',
+    label: '5.25 × 8 inches',
+    note: 'A shade wider than 5 × 8. Popular for paperback fiction.',
+    widthIn: 5.25,
+    heightIn: 8,
+    margins: { top: 0.75, bottom: 0.75, outside: 0.6, inside: 0.6 },
+  },
+  {
     id: '5x8',
     // Not "pocket sized": a true pocket paperback is 4.25 x 6.87 inches.
     label: '5 × 8 inches',
-    note: 'The smallest of the three, so the same book runs to the most pages.',
+    note: 'The smallest of the American sizes, so the same book runs to the most pages.',
     widthIn: 5,
     heightIn: 8,
     margins: { top: 0.7, bottom: 0.7, outside: 0.55, inside: 0.55 },
+  },
+  {
+    id: 'a5',
+    label: 'A5 (5.83 × 8.27 inches)',
+    note: 'The usual European paperback size. Choose it if most of your readers are in the UK or Europe.',
+    // 148 x 210 mm, as Word measures it: 8391 x 11906 twips.
+    widthIn: 8391 / 1440,
+    heightIn: 11906 / 1440,
+    margins: { top: 0.75, bottom: 0.75, outside: 0.6, inside: 0.6 },
   },
 ];
 
@@ -135,6 +152,26 @@ export const BOOK_LOOKS: BookLook[] = [
     chapterBlanksBefore: 3,
     chapterBlanksAfter: 1,
     sceneMark: '·',
+  },
+  {
+    // KDP lists large print as its own edition and asks for 16-point type or
+    // larger. Ragged right and open spacing are what large-print readers ask for.
+    id: 'largePrint',
+    label: 'Large Print',
+    note: 'Sixteen-point type, open spacing, ragged right. For a large-print edition; expect roughly twice the pages.',
+    bodyFont: 'Georgia',
+    headingFont: 'Georgia',
+    bodySizePt: 16,
+    indentIn: 0.3,
+    lineSpacing: 1.3,
+    justified: false,
+    chapterSizePt: 24,
+    chapterAlign: 'left',
+    chapterCaps: false,
+    chapterBold: true,
+    chapterBlanksBefore: 3,
+    chapterBlanksAfter: 2,
+    sceneMark: '* * *',
   },
 ];
 

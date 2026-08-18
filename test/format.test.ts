@@ -182,6 +182,46 @@ describe('formatting a manuscript against a reference', () => {
     expect(textOf(italicRuns[0].parentNode?.parentNode ?? null)).toContain('the small bell');
   });
 
+  it('sets underlined passages in italics, unless told to keep the underlining', async () => {
+    const underlined: ParaSpec[] = [
+      { runs: [{ text: 'CHAPTER ONE', bold: true }], alignment: 'center' },
+      {
+        runs: [
+          { text: `${PROSE_1} She had read ` },
+          { text: 'Middlemarch', underline: true },
+          { text: ' twice that year.' },
+        ],
+      },
+    ];
+    const paths = await setup(underlined);
+    const { analysis } = await loadManuscript(paths.manuscript);
+    expect(analysis.underlinedRunCount).toBe(1);
+
+    await formatManuscript({
+      referencePath: paths.reference,
+      manuscriptPath: paths.manuscript,
+      outputPath: paths.output,
+      options: PLAIN,
+    });
+    let out = await readOutput(paths.output);
+    let root = (await out.pkg.readXml(out.pkg.documentPath))?.documentElement ?? null;
+    expect(descendants(root, 'u')).toHaveLength(0);
+    const italic = descendants(root, 'i');
+    expect(italic).toHaveLength(1);
+    expect(textOf(italic[0].parentNode?.parentNode ?? null)).toBe('Middlemarch');
+
+    await formatManuscript({
+      referencePath: paths.reference,
+      manuscriptPath: paths.manuscript,
+      outputPath: paths.output,
+      options: { ...PLAIN, underlineToItalic: false },
+    });
+    out = await readOutput(paths.output);
+    root = (await out.pkg.readXml(out.pkg.documentPath))?.documentElement ?? null;
+    expect(descendants(root, 'u')).toHaveLength(1);
+    expect(descendants(root, 'i')).toHaveLength(0);
+  });
+
   it("drops the manuscript's own fonts, sizes and colours", async () => {
     const paths = await setup();
     await formatManuscript({
@@ -413,5 +453,125 @@ describe('formatting a manuscript against a reference', () => {
       expect(pkg.has(pkg.resolveTarget(pkg.documentPath, rel.target))).toBe(true);
     }
     await expect(pkg.readXml(pkg.documentPath)).resolves.not.toBeNull();
+  });
+});
+
+describe('chapter-opening pages without a running head', () => {
+  const HEADED_DESIGN = { ...BOOK_TEMPLATE, headerText: 'BOOK TITLE', footerText: 'page' };
+  const THREE_CHAPTERS: ParaSpec[] = [
+    { runs: [{ text: 'CHAPTER ONE', bold: true }], alignment: 'center' },
+    { text: PROSE_1 },
+    { runs: [{ text: 'CHAPTER TWO', bold: true }], alignment: 'center' },
+    { text: PROSE_2 },
+    { runs: [{ text: 'CHAPTER THREE', bold: true }], alignment: 'center' },
+    { text: PROSE_3 },
+  ];
+
+  it('is suggested when the design has headers, and gives each chapter a section with a distinct first page', async () => {
+    const id = counter++;
+    const reference = await writeDocx(join(dir, `ref${id}.docx`), HEADED_DESIGN);
+    const manuscript = await writeDocx(join(dir, `ms${id}.docx`), { paragraphs: THREE_CHAPTERS });
+    const output = join(dir, `out${id}.docx`);
+    const { analyzeReference, suggestOptions } = await import('../src/core/format.js');
+    const { profile } = await analyzeReference(await openDocx(reference));
+    expect(suggestOptions(profile).chapterOpenerNoHeader).toBe(true);
+
+    await formatManuscript({
+      referencePath: reference,
+      manuscriptPath: manuscript,
+      outputPath: output,
+      options: { ...PLAIN, chapterStart: 'newPage', chapterOpenerNoHeader: true },
+    });
+    const out = await readOutput(output);
+    const chapters = out.paragraphs.filter((p) => p.styleId === 'ChapterTitle');
+    expect(chapters).toHaveLength(3);
+    // Sections do the page-starting, not page breaks.
+    expect(chapters.some((c) => c.pageBreakBefore)).toBe(false);
+    expect(out.paragraphs.filter((p) => p.sectionType === 'nextPage')).toHaveLength(2);
+
+    const doc = await out.pkg.readXml(out.pkg.documentPath);
+    const body = child(doc?.documentElement ?? null, 'body');
+    const sectPrs = descendants(body, 'sectPr');
+    expect(sectPrs).toHaveLength(3);
+    for (const sectPr of sectPrs) {
+      expect(child(sectPr, 'titlePg')).not.toBeNull();
+      const footers = children(sectPr, 'footerReference').map((f) => attr(f, 'type'));
+      // The page number keeps printing on the opener; the header does not.
+      expect(footers).toContain('first');
+      expect(children(sectPr, 'headerReference').map((h) => attr(h, 'type'))).not.toContain('first');
+      // titlePg keeps its place in the schema sequence.
+      const names = [...sectPr.childNodes].filter((n) => n.nodeType === 1).map((n) => (n as Element).localName);
+      expect(names.indexOf('titlePg')).toBeGreaterThan(names.indexOf('pgMar'));
+    }
+    // Only the first section restarts the numbering.
+    const starts = descendants(body, 'pgNumType').map((el) => attr(el, 'start'));
+    expect(starts.filter((s) => s !== null)).toEqual(['1']);
+  });
+
+  it('leaves the old page-break behaviour alone when turned off', async () => {
+    const id = counter++;
+    const reference = await writeDocx(join(dir, `ref${id}.docx`), HEADED_DESIGN);
+    const manuscript = await writeDocx(join(dir, `ms${id}.docx`), { paragraphs: THREE_CHAPTERS });
+    const output = join(dir, `out${id}.docx`);
+    await formatManuscript({
+      referencePath: reference,
+      manuscriptPath: manuscript,
+      outputPath: output,
+      options: { ...PLAIN, chapterStart: 'newPage', chapterOpenerNoHeader: false },
+    });
+    const out = await readOutput(output);
+    const chapters = out.paragraphs.filter((p) => p.styleId === 'ChapterTitle');
+    expect(chapters.slice(1).every((c) => c.pageBreakBefore)).toBe(true);
+    expect(out.paragraphs.filter((p) => p.sectionType !== null)).toHaveLength(0);
+  });
+});
+
+describe('opening a chapter with small capitals', () => {
+  it('sets the first words of the first paragraph in small caps, splitting a run where it must', async () => {
+    const paths = await setup([
+      { runs: [{ text: 'CHAPTER ONE', bold: true }], alignment: 'center' },
+      { runs: [{ text: '“Well,” said ' }, { text: 'Hollis', italic: true }, { text: ', pushing the door.' }] },
+      { text: PROSE_2 },
+      { text: '#', alignment: 'center' },
+      { text: PROSE_3 },
+      { runs: [{ text: 'CHAPTER TWO', bold: true }], alignment: 'center' },
+      { text: `${PROSE_1}` },
+    ]);
+    await formatManuscript({
+      referencePath: paths.reference,
+      manuscriptPath: paths.manuscript,
+      outputPath: paths.output,
+      options: { ...PLAIN, leadInSmallCaps: true },
+    });
+    const out = await readOutput(paths.output);
+    const doc = await out.pkg.readXml(out.pkg.documentPath);
+    const body = child(doc?.documentElement ?? null, 'body');
+    const paragraphs = children(body, 'p');
+    const smallCapText = (p: Element) =>
+      descendants(p, 'r')
+        .filter((r) => child(child(r, 'rPr'), 'smallCaps') !== null)
+        .map((r) => textOf(r))
+        .join('');
+    // Cut at the comma, carrying the closing quote; the rest of the run is untouched.
+    expect(smallCapText(paragraphs[1])).toBe('“Well,”');
+    expect(textOf(paragraphs[1])).toBe('“Well,” said Hollis, pushing the door.');
+    // Only chapter openers, not the paragraph after a scene break.
+    expect(smallCapText(paragraphs[4])).toBe('');
+    // Up to four words when no punctuation intervenes.
+    expect(smallCapText(paragraphs[6])).toBe('The morning came in');
+    expect(textOf(paragraphs[6])).toBe(PROSE_1);
+  });
+
+  it('does nothing unless asked', async () => {
+    const paths = await setup();
+    await formatManuscript({
+      referencePath: paths.reference,
+      manuscriptPath: paths.manuscript,
+      outputPath: paths.output,
+      options: PLAIN,
+    });
+    const out = await readOutput(paths.output);
+    const doc = await out.pkg.readXml(out.pkg.documentPath);
+    expect(descendants(doc?.documentElement ?? null, 'smallCaps')).toHaveLength(0);
   });
 });

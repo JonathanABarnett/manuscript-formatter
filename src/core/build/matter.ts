@@ -35,8 +35,12 @@ export function sectionHasContent(
         details.publisher.trim().length > 0 ||
         details.isbn.trim().length > 0
       );
+    case 'alsoBy':
+      return details.alsoBy.trim().length > 0;
     case 'dedication':
       return details.dedication.trim().length > 0;
+    case 'epigraph':
+      return details.epigraph.trim().length > 0;
     case 'acknowledgments':
       return details.acknowledgments.trim().length > 0;
     case 'aboutTheAuthor':
@@ -55,7 +59,7 @@ function para(
   ctx: MatterContext,
   role: BlockRole,
   text: string,
-  opts: { breakBefore?: boolean; align?: string } = {},
+  opts: { breakBefore?: boolean; align?: string; italic?: boolean } = {},
 ): Element {
   const p = ctx.doc.createElementNS(NS.w, 'w:p');
   const pPr = wEl(ctx.doc, 'pPr');
@@ -67,6 +71,11 @@ function para(
 
   if (text.length > 0) {
     const run = ctx.doc.createElementNS(NS.w, 'w:r');
+    if (opts.italic) {
+      const rPr = wEl(ctx.doc, 'rPr');
+      rPr.appendChild(wEl(ctx.doc, 'i'));
+      run.appendChild(rPr);
+    }
     const t = ctx.doc.createElementNS(NS.w, 'w:t');
     t.setAttributeNS(NS.xml, 'xml:space', 'preserve');
     t.appendChild(ctx.doc.createTextNode(text));
@@ -153,6 +162,22 @@ export function buildFrontMatter(ctx: MatterContext): MatterPage[] {
     out = [];
   };
 
+  // Earlier books come first, ahead of the title page, as publishers set them.
+  if (sections.alsoBy && sectionHasContent('alsoBy', details)) {
+    const breakBefore = startPage();
+    const author = details.author.trim();
+    out.push(
+      para(ctx, 'frontMatter', author ? `Also by ${author}` : 'Also by the author', {
+        breakBefore,
+        align: 'center',
+      }),
+    );
+    for (const line of lines(details.alsoBy)) {
+      out.push(para(ctx, 'frontMatter', line, { align: 'center', italic: true }));
+    }
+    endPage('frontMatter');
+  }
+
   if (sections.titlePage && sectionHasContent('titlePage', details)) {
     const breakBefore = startPage();
     out.push(para(ctx, 'frontMatterTitle', details.title.trim(), { breakBefore }));
@@ -191,6 +216,22 @@ export function buildFrontMatter(ctx: MatterContext): MatterPage[] {
     const [head, ...rest] = lines(details.dedication);
     out.push(para(ctx, 'frontMatter', head, { breakBefore, align: 'center' }));
     for (const line of rest) out.push(para(ctx, 'frontMatter', line, { align: 'center' }));
+    endPage('frontMatter');
+  }
+
+  // An epigraph: the quotation in italics, its source on the last line set
+  // to the right, in the design's quotation style where it has one.
+  if (sections.epigraph && sectionHasContent('epigraph', details)) {
+    const breakBefore = startPage();
+    const all = lines(details.epigraph);
+    const source = all.length > 1 ? all[all.length - 1] : null;
+    const quote = source ? all.slice(0, -1) : all;
+    quote.forEach((line, i) =>
+      out.push(para(ctx, 'blockQuote', line, { breakBefore: breakBefore && i === 0, italic: true })),
+    );
+    if (source) {
+      out.push(para(ctx, 'blockQuote', source.replace(/^[—–-]\s*/, '— '), { align: 'right' }));
+    }
     endPage('frontMatter');
   }
 

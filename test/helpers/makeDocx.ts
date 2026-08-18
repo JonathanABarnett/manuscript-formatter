@@ -71,9 +71,17 @@ export interface DocSpec {
   footnotes?: Array<{ id: number; text: string }>;
   /** Package a 1x1 PNG at word/media/test.png for `image` paragraphs. */
   image?: boolean;
+  /** Bytes to package as the test image instead of the 1x1 PNG. */
+  imageBytes?: Uint8Array;
+  /** Displayed size of the test image, in EMUs (914400 per inch). Default one inch. */
+  imageExtentEmu?: number;
   /** Optional visible template wording inherited through a header or footer. */
   headerText?: string;
   footerText?: string;
+  /** Inner XML of a `word/settings.xml` part to package, e.g. `<w:autoHyphenation/>`. */
+  settings?: string;
+  /** `w:lang` for the document defaults, e.g. `en-GB`. */
+  language?: string;
 }
 
 /** Smallest valid PNG, so image migration has real bytes to move. */
@@ -155,7 +163,7 @@ function runXml(r: RunSpec): string {
   return `<w:r>${props}<w:t xml:space="preserve">${esc(r.text)}</w:t></w:r>`;
 }
 
-function paraXml(p: ParaSpec): string {
+function paraXml(p: ParaSpec, imageEmu = 914400): string {
   const pPr: string[] = [];
   if (p.style) pPr.push(`<w:pStyle w:val="${esc(p.style)}"/>`);
   if (p.pageBreakBefore) pPr.push('<w:pageBreakBefore/>');
@@ -180,7 +188,7 @@ function paraXml(p: ParaSpec): string {
       ? '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/></w:rPr>' +
         `<w:footnoteReference w:id="${p.footnoteRef}"/></w:r>`
       : '';
-  const picture = p.image ? IMAGE_RUN : '';
+  const picture = p.image ? imageRun(imageEmu) : '';
   const props = pPr.length ? `<w:pPr>${pPr.join('')}</w:pPr>` : '';
   return `<w:p>${props}${lead}${body}${note}${picture}</w:p>`;
 }
@@ -190,17 +198,32 @@ const WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawi
 const PIC = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
 
 /** An inline picture pointing at the packaged media relationship. */
-const IMAGE_RUN =
+const imageRun = (emu: number): string =>
   '<w:r><w:drawing>' +
   '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
-  '<wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Picture 1"/>' +
+  `<wp:extent cx="${emu}" cy="${emu}"/><wp:docPr id="1" name="Picture 1"/>` +
   `<a:graphic><a:graphicData uri="${PIC}">` +
   '<pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="test.png"/><pic:cNvPicPr/></pic:nvPicPr>' +
   '<pic:blipFill><a:blip r:embed="rIdImage"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
-  '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm>' +
+  `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu}" cy="${emu}"/></a:xfrm>` +
   '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
   '</pic:pic></a:graphicData></a:graphic></wp:inline>' +
   '</w:drawing></w:r>';
+
+/**
+ * A PNG header declaring `width` x `height` pixels, with no picture data.
+ * Enough for the analyzer, which reads only the header.
+ */
+export function pngHeader(width: number, height: number): Uint8Array {
+  const out = new Uint8Array(33);
+  out.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  const view = new DataView(out.buffer);
+  view.setUint32(8, 13);
+  out.set([0x49, 0x48, 0x44, 0x52], 12); // IHDR
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return out;
+}
 
 function footnotesXml(notes: Array<{ id: number; text: string }>): string {
   const fixed =
@@ -258,6 +281,11 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
       '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>',
     );
   }
+  if (spec.settings !== undefined) {
+    overrides.push(
+      '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>',
+    );
+  }
 
   zip.file(
     '[Content_Types].xml',
@@ -296,7 +324,7 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
     docRels.push(
       '<Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/test.png"/>',
     );
-    zip.file('word/media/test.png', TEST_PNG);
+    zip.file('word/media/test.png', spec.imageBytes ?? TEST_PNG);
   }
   if (spec.headerText) {
     docRels.push(
@@ -316,6 +344,15 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W}"><w:p><w:r><w:t>${esc(spec.footerText)}</w:t></w:r></w:p></w:ftr>`,
     );
   }
+  if (spec.settings !== undefined) {
+    docRels.push(
+      '<Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>',
+    );
+    zip.file(
+      'word/settings.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="${W}">${spec.settings}</w:settings>`,
+    );
+  }
   zip.file(
     'word/_rels/document.xml.rels',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -328,7 +365,9 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
   zip.file(
     'word/styles.xml',
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W}">` +
-      '<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="24"/></w:rPr></w:rPrDefault>' +
+      '<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="24"/>' +
+      (spec.language ? `<w:lang w:val="${esc(spec.language)}"/>` : '') +
+      '</w:rPr></w:rPrDefault>' +
       '<w:pPrDefault><w:pPr><w:spacing w:after="0"/></w:pPr></w:pPrDefault></w:docDefaults>' +
       styles.map(styleXml).join('') +
       '</w:styles>',
@@ -342,7 +381,7 @@ export async function buildDocx(spec: DocSpec): Promise<Buffer> {
     // stable relationship ids added above.
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W}" xmlns:r="${R}" xmlns:a="${A}" xmlns:wp="${WP}" xmlns:pic="${PIC}"><w:body>` +
-      spec.paragraphs.map(paraXml).join('') +
+      spec.paragraphs.map((p) => paraXml(p, spec.imageExtentEmu ?? 914400)).join('') +
       `<w:sectPr>${spec.headerText ? '<w:headerReference w:type="default" r:id="rIdHeader"/>' : ''}` +
       `${spec.footerText ? '<w:footerReference w:type="default" r:id="rIdFooter"/>' : ''}` +
       `${spec.sectPr ?? LETTER_SECTPR}</w:sectPr>` +

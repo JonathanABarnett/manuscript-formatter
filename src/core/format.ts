@@ -57,6 +57,12 @@ export function suggestOptions(
         ? 'newPage'
         : 'continuous',
     firstParagraphNoIndent: profile.usesFirstParagraphNoIndent,
+    // A design with running heads gets them left off chapter openers, the way
+    // printed books do. Without headers there is nothing to leave off.
+    chapterOpenerNoHeader: profile.hasHeaders,
+    // Hyphenation is what makes justified text sit evenly. A design that
+    // already asks for it keeps it; a justified one that forgot gets it.
+    hyphenate: profile.hyphenates || profile.bodyJustified,
     extraSections: { ...DEFAULT_FORMAT_OPTIONS.extraSections, contents: wantsContents },
   };
 }

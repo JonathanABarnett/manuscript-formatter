@@ -1,11 +1,21 @@
 import { NS, RELTYPE } from '../ooxml/ns.js';
-import type { DocxPackage, Relationships } from '../ooxml/package.js';
-import { attr, child, children, clearChildren, descendants, importNode, wEl } from '../ooxml/xml.js';
+import type { DocxPackage } from '../ooxml/package.js';
+import {
+  attr,
+  child,
+  children,
+  clearChildren,
+  descendants,
+  importNode,
+  textOf,
+  wEl,
+} from '../ooxml/xml.js';
 import type { BlockRole, FormatOptions, FormatStats, ManuscriptBlock, StyleRole } from '../types.js';
 import type { LoadedReference } from '../analyze/reference.js';
 import { collectSectPrs } from '../analyze/reference.js';
 import type { LoadedManuscript } from '../analyze/manuscript.js';
-import { styleForRole } from '../roles.js';
+import { chapterTitleTexts, leadInLength, styleForRole } from '../roles.js';
+import { parseChapterTitle } from '../analyze/chapterNumbers.js';
 import {
   buildBackMatter,
   buildContentsPage,
@@ -13,6 +23,7 @@ import {
   needsFieldUpdate,
 } from './matter.js';
 import { applyDetailsToRunningHeads } from './headers.js';
+import { applyLanguage, applyPrintSettings, requestFieldUpdate } from './settings.js';
 import { ResourceMigrator } from './resources.js';
 import { NumberingMerger } from './numbering.js';
 import { NoteMerger } from './notes.js';
@@ -108,6 +119,7 @@ export async function composeDocument(
     manuscriptStyles: manuscript.styles,
     referenceStyles: reference.styles,
     keepEmphasis: options.keepEmphasis,
+    underlineToItalic: options.underlineToItalic,
     removeManualIndents: options.removeManualIndents,
     transformer,
   };
@@ -115,6 +127,13 @@ export async function composeDocument(
   const bodyIndent = roleStyles.body
     ? reference.styles.resolve(roleStyles.body).firstLineIndentTwips ?? 0
     : 0;
+
+  // Chapter titles rewritten to a uniform numbering, where that was asked for.
+  const chapterTitles = chapterTitleTexts(
+    manuscript.analysis.blocks,
+    (b) => effectiveRole(b, options),
+    options,
+  );
 
   // The reviewer may tune the chapter sink; otherwise follow the template.
   const chapterBlanksBefore = Math.max(
@@ -183,12 +202,21 @@ export async function composeDocument(
    * restart page numbering at 1.
    */
   let bodySectionsEmitted = 0;
+  /**
+   * Chapters become sections of their own when they must open on a recto, or
+   * when their opening page is to carry no running head — Word can only
+   * leave a header off the first page of a section.
+   */
+  const headerlessOpeners = options.chapterOpenerNoHeader && options.chapterStart !== 'continuous';
+  const chapterSections = options.chapterStart === 'oddPage' || headerlessOpeners;
   let pendingPageBreak = false;
   let anyContentEmitted = generatedFront.length > 0;
   /** The front-matter role currently being copied, for its section break. */
   let lastFrontRole: BlockRole | null = null;
   let frontSectionPending = frontSectPrClone !== null && options.includeFrontMatter;
   let inFrontMatter = true;
+  /** The next text paragraph opens a chapter, so it may take the lead-in. */
+  let openerPending = false;
 
   for (const block of manuscript.analysis.blocks) {
     const role = effectiveRole(block, options);
@@ -262,6 +290,7 @@ export async function composeDocument(
       anyContentEmitted = true;
       lastParagraph = null;
       pendingPageBreak = false;
+      openerPending = false;
       continue;
     }
 
@@ -273,10 +302,11 @@ export async function composeDocument(
     pendingPageBreak = false;
 
     if (startsChapter && anyContentEmitted && !sectionBreakApplied) {
-      if (options.chapterStart === 'oddPage' && lastParagraph && bodySectPrClone) {
+      if (chapterSections && lastParagraph && bodySectPrClone) {
         const sectPr = bodySectPrClone.cloneNode(true) as Element;
-        setSectionType(sectPr, 'oddPage', outDoc);
+        setSectionType(sectPr, options.chapterStart === 'oddPage' ? 'oddPage' : 'nextPage', outDoc);
         if (bodySectionsEmitted > 0) stripPageNumberRestart(sectPr);
+        if (headerlessOpeners) markFirstPageDifferent(sectPr, outDoc);
         bodySectionsEmitted++;
         attachSectPr(lastParagraph, sectPr, outDoc);
         breakBefore = false;
@@ -313,6 +343,7 @@ export async function composeDocument(
       copyOptions,
       breakBefore,
       bodyIndent,
+      chapterTitles,
     });
 
     const numPr = child(child(node, 'pPr'), 'numPr');
@@ -324,6 +355,16 @@ export async function composeDocument(
     await migrator.migrate(p);
     await remapNotes(p, footnotes, endnotes);
     outBody.appendChild(p);
+
+    // The opening words of a chapter's first paragraph, in small capitals.
+    if (CHAPTER_ROLES.has(role) || role === 'chapterSubtitle') {
+      openerPending = true;
+    } else if (openerPending) {
+      if (options.leadInSmallCaps && (role === 'bodyFirst' || role === 'body') && !block.hasImage) {
+        applySmallCapsPrefix(p, outDoc, leadInLength(textOf(p)));
+      }
+      openerPending = false;
+    }
 
     lastParagraph = p;
     anyContentEmitted = true;
@@ -352,6 +393,12 @@ export async function composeDocument(
   if (needsFieldUpdate(options.extraSections)) {
     await requestFieldUpdate(out, outRels);
   }
+  // Settings that make the file print well: hyphenation as chosen, fonts
+  // embedded on the author's next save, and the manuscript's own language.
+  await applyPrintSettings(out, outRels, { hyphenate: options.hyphenate });
+  if (manuscript.analysis.language) {
+    await applyLanguage(out, outRels, manuscript.analysis.language);
+  }
 
   if (contentsPage) {
     for (const p of contentsPage.paragraphs) outBody.appendChild(p);
@@ -361,6 +408,10 @@ export async function composeDocument(
   if (bodySectPrClone) {
     // The final section only restarts numbering when it is the only one.
     if (bodySectionsEmitted > 0) stripPageNumberRestart(bodySectPrClone);
+    // The last chapter's opening page is the first page of this section.
+    if (headerlessOpeners && stats.chapters + stats.parts > 0) {
+      markFirstPageDifferent(bodySectPrClone, outDoc);
+    }
     outBody.appendChild(bodySectPrClone);
   }
 
@@ -424,6 +475,8 @@ interface BuildParagraphArgs {
   copyOptions: Parameters<typeof copyParagraphContent>[1];
   breakBefore: boolean;
   bodyIndent: number;
+  /** Replacement text for chapter titles whose numbering is being changed. */
+  chapterTitles: Map<number, string>;
 }
 
 function buildParagraph(args: BuildParagraphArgs): Element {
@@ -464,6 +517,13 @@ function buildParagraph(args: BuildParagraphArgs): Element {
   // A scene break can be replaced with the reference's own ornament text.
   if (role === 'sceneBreak' && options.sceneBreakText !== null) {
     replaceText(p, outDoc, options.sceneBreakText);
+  }
+
+  // A chapter number written to the chosen style. Only the label and number
+  // change, so a title after them keeps whatever emphasis it carried.
+  const retitled = role === 'chapterTitle' ? args.chapterTitles.get(block.index) : undefined;
+  if (retitled !== undefined) {
+    replaceLeadingText(p, outDoc, retitled, parseChapterTitle(block.text)?.rest ?? '');
   }
   return p;
 }
@@ -623,6 +683,151 @@ function replaceText(p: Element, doc: Document, text: string): void {
   p.appendChild(run);
 }
 
+/**
+ * Replace everything before `keepTail` with the start of `newText`, keeping
+ * the runs that carry the tail. Falls back to a plain replacement when the
+ * paragraph's text does not end with the tail as expected.
+ */
+function replaceLeadingText(p: Element, doc: Document, newText: string, keepTail: string): void {
+  // Trailing whitespace in the paragraph sits after the tail and is left alone.
+  const raw = textOf(p).replace(/\s+$/, '');
+  if (!keepTail || !raw.endsWith(keepTail) || !newText.endsWith(keepTail)) {
+    replaceText(p, doc, newText);
+    return;
+  }
+  const prefixLen = raw.length - keepTail.length;
+  const newPrefix = newText.slice(0, newText.length - keepTail.length);
+
+  const runs = descendants(p, 'r');
+  let consumed = 0;
+  // The new prefix takes the formatting of the run it replaces.
+  const firstProps: Element | null = runs.length > 0 ? child(runs[0], 'rPr') : null;
+  let anchor: Element | null = null;
+  for (const run of runs) {
+    const length = textOf(run).length;
+    if (consumed >= prefixLen) {
+      anchor = run;
+      break;
+    }
+    if (consumed + length <= prefixLen) {
+      consumed += length;
+      // Keep a run that holds a picture or a note; drop one that only had text.
+      if (descendants(run, 'drawing').length === 0 && descendants(run, 'footnoteReference').length === 0) {
+        run.parentNode?.removeChild(run);
+      }
+      continue;
+    }
+    // The boundary falls inside this run: trim its leading characters.
+    let remaining = prefixLen - consumed;
+    for (let n = run.firstChild; n && remaining > 0; ) {
+      const next = n.nextSibling;
+      if (n.nodeType === 1) {
+        const el = n as Element;
+        if (el.namespaceURI === NS.w && el.localName === 't') {
+          const text = el.textContent ?? '';
+          if (text.length <= remaining) {
+            remaining -= text.length;
+            run.removeChild(el);
+          } else {
+            el.textContent = text.slice(remaining);
+            remaining = 0;
+          }
+        } else if (
+          el.namespaceURI === NS.w &&
+          (el.localName === 'tab' || el.localName === 'br' || el.localName === 'cr' || el.localName === 'noBreakHyphen')
+        ) {
+          remaining -= 1;
+          run.removeChild(el);
+        }
+      }
+      n = next;
+    }
+    consumed = prefixLen;
+    anchor = run;
+    break;
+  }
+
+  const run = doc.createElementNS(NS.w, 'w:r');
+  if (firstProps) run.appendChild(importNode(doc, firstProps));
+  const t = doc.createElementNS(NS.w, 'w:t');
+  if (newPrefix !== newPrefix.trim()) t.setAttributeNS(NS.xml, 'xml:space', 'preserve');
+  t.appendChild(doc.createTextNode(newPrefix));
+  run.appendChild(t);
+  if (anchor?.parentNode) anchor.parentNode.insertBefore(run, anchor);
+  else p.appendChild(run);
+}
+
+/** Put the first `length` characters of a paragraph in small capitals. */
+function applySmallCapsPrefix(p: Element, doc: Document, length: number): void {
+  let remaining = length;
+  for (const run of descendants(p, 'r')) {
+    if (remaining <= 0) break;
+    const runLength = textOf(run).length;
+    if (runLength === 0) continue;
+    if (runLength > remaining) splitRun(run, remaining, doc);
+    let rPr = child(run, 'rPr');
+    if (!rPr) {
+      rPr = wEl(doc, 'rPr');
+      run.insertBefore(rPr, run.firstChild);
+    }
+    if (!child(rPr, 'smallCaps')) {
+      // `w:smallCaps` follows `w:caps` and precedes `w:strike` in `w:rPr`.
+      const anchor =
+        child(rPr, 'strike') ?? child(rPr, 'dstrike') ?? child(rPr, 'vanish') ?? child(rPr, 'u') ??
+        child(rPr, 'vertAlign') ?? child(rPr, 'lang') ?? null;
+      if (anchor) rPr.insertBefore(wEl(doc, 'smallCaps'), anchor);
+      else rPr.appendChild(wEl(doc, 'smallCaps'));
+    }
+    remaining -= Math.min(runLength, remaining);
+  }
+}
+
+/**
+ * Split a run after `offset` characters of its text, moving the rest into a
+ * new run with the same properties immediately after it.
+ */
+function splitRun(run: Element, offset: number, doc: Document): void {
+  const tail = doc.createElementNS(NS.w, 'w:r');
+  const rPr = child(run, 'rPr');
+  if (rPr) tail.appendChild(rPr.cloneNode(true));
+  const moving: Node[] = [];
+  let consumed = 0;
+  for (let n = run.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType !== 1) continue;
+    const el = n as Element;
+    if (el.namespaceURI === NS.w && el.localName === 'rPr') continue;
+    if (consumed >= offset) {
+      moving.push(el);
+      continue;
+    }
+    if (el.namespaceURI === NS.w && el.localName === 't') {
+      const text = el.textContent ?? '';
+      if (consumed + text.length <= offset) {
+        consumed += text.length;
+        continue;
+      }
+      const cut = offset - consumed;
+      const rest = text.slice(cut);
+      el.textContent = text.slice(0, cut);
+      el.setAttributeNS(NS.xml, 'xml:space', 'preserve');
+      const t = doc.createElementNS(NS.w, 'w:t');
+      t.setAttributeNS(NS.xml, 'xml:space', 'preserve');
+      t.appendChild(doc.createTextNode(rest));
+      moving.push(t);
+      consumed = offset;
+      continue;
+    }
+    if (
+      el.namespaceURI === NS.w &&
+      (el.localName === 'tab' || el.localName === 'br' || el.localName === 'cr' || el.localName === 'noBreakHyphen')
+    ) {
+      consumed += 1;
+    }
+  }
+  for (const node of moving) tail.appendChild(node);
+  run.parentNode?.insertBefore(tail, run.nextSibling);
+}
+
 async function mapNumbering(
   numPr: Element,
   numbering: NumberingMerger,
@@ -712,6 +917,38 @@ function setVerticalAlignment(sectPr: Element, value: string, doc: Document): vo
   else sectPr.appendChild(vAlign);
 }
 
+/**
+ * Give the section a distinct first page with no header. Word then uses the
+ * design's first-page header and footer for it — usually none — so a page
+ * number that lives in the footer is carried over as the first-page footer
+ * when the design has not said otherwise. `w:titlePg` follows `w:vAlign` and
+ * precedes `w:textDirection`, `w:bidi`, `w:rtlGutter` and `w:docGrid`.
+ */
+function markFirstPageDifferent(sectPr: Element, doc: Document): void {
+  if (!child(sectPr, 'titlePg')) {
+    const titlePg = wEl(doc, 'titlePg');
+    const anchor =
+      child(sectPr, 'textDirection') ??
+      child(sectPr, 'bidi') ??
+      child(sectPr, 'rtlGutter') ??
+      child(sectPr, 'docGrid') ??
+      null;
+    if (anchor) sectPr.insertBefore(titlePg, anchor);
+    else sectPr.appendChild(titlePg);
+  }
+  const footers = children(sectPr, 'footerReference');
+  const hasFirstFooter = footers.some((f) => attr(f, 'type') === 'first');
+  const defaultFooter = footers.find((f) => attr(f, 'type') === 'default');
+  if (!hasFirstFooter && defaultFooter) {
+    const first = defaultFooter.cloneNode(true) as Element;
+    first.setAttributeNS(NS.w, 'w:type', 'first');
+    // Reference elements open the section: after the last footer reference.
+    const last = footers[footers.length - 1];
+    if (last.nextSibling) sectPr.insertBefore(first, last.nextSibling);
+    else sectPr.appendChild(first);
+  }
+}
+
 /** `w:type` sits after the note properties and before `w:pgSz`. */
 function setSectionType(sectPr: Element, value: string, doc: Document): void {
   const existing = child(sectPr, 'type');
@@ -739,33 +976,4 @@ function stripPageNumberRestart(sectPr: Element): void {
 
 function dedupe(items: string[]): string[] {
   return [...new Set(items)];
-}
-
-/**
- * Set `w:updateFields` so Word offers to fill in the contents table on open.
- * The settings part is created if the reference has none.
- */
-async function requestFieldUpdate(out: DocxPackage, rels: Relationships): Promise<void> {
-  let target = rels.firstTargetOfType(RELTYPE.settings);
-  if (!target) {
-    target = 'settings.xml';
-    rels.add(RELTYPE.settings, target);
-    out.writeText(
-      `${out.documentDir}settings.xml`,
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<w:settings xmlns:w="${NS.w}"/>`,
-    );
-    await out.ensureContentType({
-      partName: `${out.documentDir}settings.xml`,
-      partType:
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
-    });
-  }
-  const path = out.resolveTarget(out.documentPath, target);
-  const doc = await out.readXml(path);
-  const root = doc?.documentElement;
-  if (!doc || !root) return;
-  if (child(root, 'updateFields')) return;
-  // `w:updateFields` belongs near the top of the settings sequence.
-  root.insertBefore(wEl(doc, 'updateFields', { val: 'true' }), root.firstChild);
-  out.writeXml(path, doc);
 }

@@ -1,5 +1,5 @@
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   CHANNEL,
@@ -23,6 +23,7 @@ import {
 import type { FormatResult } from '../core/types.js';
 
 const DOCX_FILTER = [{ name: 'Word documents', extensions: ['docx'] }];
+const CHOICES_FILTER = [{ name: 'Saved choices', extensions: ['json'] }];
 
 /**
  * Parsed documents are cached by path so pressing Format does not re-read and
@@ -165,6 +166,29 @@ function registerHandlers(): void {
 
   ipcMain.handle(CHANNEL.open, async (_event, path: string) => {
     await shell.openPath(path);
+  });
+
+  ipcMain.handle(CHANNEL.saveChoices, async (_event, suggestedName: string, json: string) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Save your choices as',
+      buttonLabel: 'Save',
+      defaultPath: suggestedName,
+      filters: CHOICES_FILTER,
+    });
+    if (result.canceled || !result.filePath) return false;
+    await writeFile(result.filePath, json, 'utf8');
+    return true;
+  });
+
+  ipcMain.handle(CHANNEL.loadChoices, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose a saved-choices file',
+      buttonLabel: 'Load',
+      properties: ['openFile'],
+      filters: CHOICES_FILTER,
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return readFile(result.filePaths[0], 'utf8');
   });
 }
 

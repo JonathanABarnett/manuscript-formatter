@@ -2,6 +2,7 @@ import { twipsToInches } from './ooxml/ns.js';
 import { estimatePages, lineSpacingMultiple } from './pageEstimate.js';
 import { sectionHasContent } from './build/matter.js';
 import { willReplaceRunningHead } from './build/headers.js';
+import { checkChapterNumbers } from './analyze/chapterNumbers.js';
 import type {
   FormatOptions,
   ManuscriptAnalysis,
@@ -100,6 +101,69 @@ export function preflight(input: PreflightInput): PreflightReport {
       title: `${chapters} chapter${chapters === 1 ? '' : 's'} found`,
       detail: 'Each one will begin on its own page.',
     });
+  }
+
+  // --- chapter numbers ----------------------------------------------------
+  const chapterBlocks = analysis.blocks.filter(
+    (b) => (options.roleOverrides[b.index] ?? b.role) === 'chapterTitle',
+  );
+  const numbering = checkChapterNumbers(chapterBlocks);
+  if (numbering.numbered.length >= 2) {
+    const byNumber = (n: number) =>
+      chapterBlocks.filter((b) => numbering.numbered.some((x) => x.index === b.index && x.number === n));
+    const wrong = [
+      ...numbering.duplicates.flatMap(byNumber),
+      ...numbering.outOfOrder.flatMap(byNumber),
+    ];
+    const problems: string[] = [];
+    if (numbering.duplicates.length > 0) {
+      problems.push(
+        `${numbering.duplicates.length === 1 ? 'number' : 'numbers'} ${numbering.duplicates.join(', ')} ` +
+          `${numbering.duplicates.length === 1 ? 'is' : 'are'} used twice`,
+      );
+    }
+    if (numbering.gaps.length > 0) {
+      problems.push(
+        `${numbering.gaps.length === 1 ? 'number' : 'numbers'} ${numbering.gaps.join(', ')} ` +
+          `${numbering.gaps.length === 1 ? 'is' : 'are'} missing`,
+      );
+    }
+    if (numbering.outOfOrder.length > 0) {
+      problems.push(`${numbering.outOfOrder.join(', ')} ${numbering.outOfOrder.length === 1 ? 'comes' : 'come'} out of order`);
+    }
+    if (options.renumberChapters) {
+      add({
+        id: 'chapter-numbers-renumbered',
+        level: 'ready',
+        title: `Chapters will be numbered 1 to ${numbering.numbered.length} in order`,
+        detail:
+          problems.length > 0
+            ? `As written, ${problems.join(' and ')}. Renumbering fixes that.`
+            : 'Every numbered chapter is written in sequence.',
+      });
+    } else if (problems.length > 0) {
+      add({
+        id: 'chapter-numbers',
+        level: 'check',
+        title: 'Chapter numbers do not run in sequence',
+        detail:
+          `As written, ${problems.join(' and ')}. If the chapters are in the right order, tick ` +
+          '“Renumber chapters in order” under Adjustments and the app will number them 1, 2, 3… for you.',
+        examples: examplesOf(wrong.length > 0 ? wrong : chapterBlocks),
+      });
+    }
+    if (numbering.mixed && options.chapterNumberStyle === 'keep') {
+      add({
+        id: 'chapter-numbers-mixed',
+        level: 'check',
+        title: 'Chapter numbers are written in more than one way',
+        detail:
+          'Some chapters spell the number out, use figures or numerals, or carry the word ' +
+          '“Chapter” where others do not. Choose a style under “Chapter numbers” in Adjustments ' +
+          'to make every chapter opening match.',
+        examples: examplesOf(chapterBlocks.filter((b) => numbering.numbered.some((x) => x.index === b.index))),
+      });
+    }
   }
 
   const unsureBlocks = analysis.blocks.filter(
@@ -218,6 +282,159 @@ export function preflight(input: PreflightInput): PreflightReport {
     }
   }
 
+  // KDP will not print a paperback shorter than 24 pages or longer than 828.
+  if (estimatedPages !== null && estimatedPages < 24) {
+    add({
+      id: 'too-short',
+      level: 'attention',
+      title: 'The book may be too short for KDP to print',
+      detail:
+        `KDP needs at least 24 pages and this looks like roughly ${estimatedPages}. A larger type ` +
+        'size, more space between lines, or a smaller page all add pages. Only an estimate — ' +
+        'KDP’s Print Previewer counts the real pages.',
+    });
+  } else if (estimatedPages !== null && estimatedPages > 828) {
+    add({
+      id: 'too-long',
+      level: 'attention',
+      title: 'The book may be too long for KDP to print in one volume',
+      detail:
+        `KDP’s paperback limit is 828 pages and this looks like roughly ${estimatedPages}. A larger ` +
+        'page size or a slightly smaller type size brings it down; otherwise it needs splitting ' +
+        'into volumes. Only an estimate — KDP’s Print Previewer counts the real pages.',
+    });
+  }
+
+  // --- the ISBN on the copyright page ---------------------------------------
+  const isbn = options.bookDetails.isbn.trim();
+  if (isbn && options.extraSections.copyrightPage) {
+    const verdict = checkIsbn(isbn);
+    if (verdict === 'ok') {
+      add({
+        id: 'isbn-ok',
+        level: 'ready',
+        title: 'The ISBN checks out',
+        detail: 'Its check digit is right, so it was copied correctly.',
+      });
+    } else {
+      add({
+        id: 'isbn',
+        level: 'attention',
+        title: 'The ISBN does not look right',
+        detail:
+          verdict === 'length'
+            ? `“${isbn}” has the wrong number of digits. An ISBN has 13 (older ones have 10). Check it against the one KDP or your ISBN agency gave you.`
+            : `“${isbn}” fails its own check digit, which usually means a typo. Check it against the one KDP or your ISBN agency gave you.`,
+      });
+    }
+  }
+
+  // --- chapters with nothing in them, and scene breaks with nothing between ---
+  const roleAt = (b: ManuscriptAnalysis['blocks'][number]) => options.roleOverrides[b.index] ?? b.role;
+  const emptyChapters: ManuscriptAnalysis['blocks'] = [];
+  const strandedBreaks: ManuscriptAnalysis['blocks'] = [];
+  {
+    /** The last thing seen that was not blank: what kind of line it was. */
+    let previous: 'title' | 'break' | 'text' | null = null;
+    let previousTitle: ManuscriptAnalysis['blocks'][number] | null = null;
+    let previousBreak: ManuscriptAnalysis['blocks'][number] | null = null;
+    for (const b of analysis.blocks) {
+      const role = b.kind === 'table' ? 'body' : roleAt(b);
+      if (role === 'empty' || role === 'pageBreak' || role === 'chapterSubtitle') continue;
+      if (role === 'chapterTitle' || role === 'partTitle') {
+        if (previous === 'title' && previousTitle && roleAt(previousTitle) === 'chapterTitle') {
+          emptyChapters.push(previousTitle);
+        }
+        if (previous === 'break' && previousBreak) strandedBreaks.push(previousBreak);
+        previous = 'title';
+        previousTitle = b;
+        continue;
+      }
+      if (role === 'sceneBreak') {
+        if (previous === 'title' || previous === 'break') strandedBreaks.push(b);
+        previous = 'break';
+        previousBreak = b;
+        continue;
+      }
+      previous = 'text';
+    }
+    if (previous === 'title' && previousTitle && roleAt(previousTitle) === 'chapterTitle') {
+      emptyChapters.push(previousTitle);
+    }
+    if (previous === 'break' && previousBreak) strandedBreaks.push(previousBreak);
+  }
+  if (emptyChapters.length > 0) {
+    add({
+      id: 'empty-chapters',
+      level: 'check',
+      title: `${emptyChapters.length} chapter${emptyChapters.length === 1 ? ' has' : 's have'} nothing under the title`,
+      detail:
+        'A chapter title is followed straight away by the next title, or by the end of the book. ' +
+        'Either the text is missing or the line is not really a chapter title — change what it is ' +
+        'in the list of chapters and headings.',
+      examples: examplesOf(emptyChapters),
+    });
+  }
+  if (strandedBreaks.length > 0) {
+    add({
+      id: 'stranded-scene-breaks',
+      level: 'check',
+      title: `${strandedBreaks.length} scene break${strandedBreaks.length === 1 ? ' has' : 's have'} nothing on one side`,
+      detail:
+        'A scene-break mark sits at the very start or end of a chapter, or right after another ' +
+        'one. Printed books do not open or close a chapter with one, so these are probably left ' +
+        'over from editing. Delete them in your manuscript, or mark them as ordinary lines.',
+      examples: examplesOf(strandedBreaks),
+    });
+  }
+
+  // --- tidy-ups the options can do, and what they would touch ---------------
+  const habit = (
+    id: string,
+    count: number,
+    on: boolean,
+    what: string,
+    onDetail: string,
+    offDetail: string,
+    onTitle: string,
+  ): void => {
+    if (count === 0) return;
+    add(
+      on
+        ? { id: `${id}-on`, level: 'ready', title: onTitle, detail: onDetail }
+        : { id, level: 'check', title: what, detail: offDetail },
+    );
+  };
+  const n = (count: number, one: string, many: string): string =>
+    `${count.toLocaleString()} ${count === 1 ? one : many}`;
+  habit(
+    'straight-quotes',
+    analysis.straightQuoteCount,
+    options.smartTypography,
+    `${n(analysis.straightQuoteCount, 'straight quote or apostrophe', 'straight quotes and apostrophes')} will print as typed`,
+    `${n(analysis.straightQuoteCount, 'straight quote or apostrophe is', 'straight quotes and apostrophes are')} being changed to the curly kind, and -- and ... to a dash and an ellipsis.`,
+    'Printed books use curly quotes (“ ” ’). Tick “Fix straight quotes, dashes, and ellipses” under Adjustments to change them — unless your manuscript has already been through an editor and you want it left exactly as it is.',
+    'Quotes and apostrophes are being set the printed way',
+  );
+  habit(
+    'double-spaces',
+    analysis.doubleSpaceCount,
+    options.collapseMultipleSpaces,
+    `${n(analysis.doubleSpaceCount, 'place has', 'places have')} two or more spaces in a row`,
+    `${n(analysis.doubleSpaceCount, 'run of doubled spaces is', 'runs of doubled spaces are')} being reduced to one.`,
+    'Usually two spaces after a full stop, a typewriter habit. Printed books use one. Tick “Reduce multiple spaces to one” under Adjustments to fix them all.',
+    'Doubled spaces are being reduced to one',
+  );
+  habit(
+    'underlining',
+    analysis.underlinedRunCount,
+    options.underlineToItalic && options.keepEmphasis,
+    `${n(analysis.underlinedRunCount, 'underlined passage', 'underlined passages')} will print underlined`,
+    `${n(analysis.underlinedRunCount, 'underlined passage is', 'underlined passages are')} being set in italics instead, as a printed book would.`,
+    'Typed manuscripts underline what a printed book sets in italics. Tick “Set underlined words in italics” under Adjustments unless the underlining is meant to print.',
+    'Underlined passages are being set in italics',
+  );
+
   // --- things that will not fit -------------------------------------------
   const textWidth =
     profile.pageSetup.widthTwips -
@@ -237,6 +454,31 @@ export function preflight(input: PreflightInput): PreflightReport {
         `Your text is about ${round(twipsToInches(textWidth))}" wide. Those pictures will spill ` +
         'past the margin. Resize them in Word after formatting, or before you load the manuscript.',
       examples: examplesOf(wideImages),
+    });
+  }
+
+  // KDP prints at 300 dots per inch. A picture set larger than its pixels
+  // allow comes out soft; well below that it comes out visibly blocky.
+  const blurry = analysis.blocks.filter((b) => b.imageMinDpi !== null && b.imageMinDpi < 300);
+  const sharp = analysis.blocks.filter((b) => b.imageMinDpi !== null && b.imageMinDpi >= 300);
+  if (blurry.length > 0) {
+    const worst = Math.min(...blurry.map((b) => b.imageMinDpi ?? 300));
+    add({
+      id: 'image-resolution',
+      level: worst < 150 ? 'attention' : 'check',
+      title: `${blurry.length} picture${blurry.length === 1 ? ' may' : 's may'} print blurry`,
+      detail:
+        `KDP prints at 300 dots per inch. At the size ${blurry.length === 1 ? 'it is' : 'they are'} placed, ` +
+        `${blurry.length === 1 ? 'this one comes' : 'the softest comes'} to about ${worst} dots per inch. ` +
+        'Use a larger original, or make the picture smaller on the page.',
+      examples: examplesOf(blurry),
+    });
+  } else if (sharp.length > 0) {
+    add({
+      id: 'image-resolution-ok',
+      level: 'ready',
+      title: `${sharp.length} picture${sharp.length === 1 ? ' has' : 's have'} enough detail to print sharply`,
+      detail: 'Each has at least 300 pixels for every inch it takes up on the page.',
     });
   }
 
@@ -294,6 +536,26 @@ export function preflight(input: PreflightInput): PreflightReport {
   }
 
   return { level: worstLevel(checks), checks: sortChecks(checks), estimatedPages };
+}
+
+/**
+ * Whether an ISBN's check digit holds. `length` when it is not 10 or 13
+ * characters once hyphens and spaces are removed.
+ */
+export function checkIsbn(raw: string): 'ok' | 'checksum' | 'length' {
+  const digits = raw.replace(/[-\s]/g, '').toUpperCase();
+  if (/^\d{13}$/.test(digits)) {
+    const sum = [...digits].reduce((acc, ch, i) => acc + Number(ch) * (i % 2 === 0 ? 1 : 3), 0);
+    return sum % 10 === 0 ? 'ok' : 'checksum';
+  }
+  if (/^\d{9}[\dX]$/.test(digits)) {
+    const sum = [...digits].reduce(
+      (acc, ch, i) => acc + (ch === 'X' ? 10 : Number(ch)) * (10 - i),
+      0,
+    );
+    return sum % 11 === 0 ? 'ok' : 'checksum';
+  }
+  return 'length';
 }
 
 function round(inches: number): number {

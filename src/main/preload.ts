@@ -15,6 +15,8 @@ const api: FormatterApi = {
   format: (payload: FormatPayload) => ipcRenderer.invoke(CHANNEL.format, payload),
   reveal: (path) => ipcRenderer.invoke(CHANNEL.reveal, path),
   open: (path) => ipcRenderer.invoke(CHANNEL.open, path),
+  saveChoices: (suggestedName, json) => ipcRenderer.invoke(CHANNEL.saveChoices, suggestedName, json),
+  loadChoices: () => ipcRenderer.invoke(CHANNEL.loadChoices),
   pathForFile: (file) => webUtils.getPathForFile(file),
 };
 

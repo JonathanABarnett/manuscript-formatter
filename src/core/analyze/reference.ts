@@ -1,6 +1,15 @@
 import { DocxPackage } from '../ooxml/package.js';
 import { NS, RELTYPE } from '../ooxml/ns.js';
-import { attr, child, childVal, children, descendants, numAttr, textOf } from '../ooxml/xml.js';
+import {
+  attr,
+  child,
+  childVal,
+  children,
+  descendants,
+  numAttr,
+  textOf,
+  toggleOn,
+} from '../ooxml/xml.js';
 import type { DocxInput, PageSetup, ReferenceProfile, StyleRole } from '../types.js';
 import { STYLE_ROLES } from '../types.js';
 import { StyleSheet } from './styles.js';
@@ -112,6 +121,8 @@ export async function analyzeReference(input: DocxInput): Promise<LoadedReferenc
     hasPageNumbers: headerFooter.hasPageNumbers,
     headerFooterText: headerFooter.text,
     hasFootnotes,
+    hyphenates: toggleOn(settingsDoc?.documentElement ?? null, 'autoHyphenation'),
+    bodyJustified: bodyProps?.alignment === 'both',
     defaultParagraphStyleId: styles.defaultParagraphStyleId,
     bodyFontName: bodyProps?.fontName ?? null,
     bodyFontSizePt: bodyProps?.fontSizePt ?? null,

@@ -11,6 +11,8 @@ export const CHANNEL = {
   format: 'mf:format',
   reveal: 'mf:reveal',
   open: 'mf:open',
+  saveChoices: 'mf:save-choices',
+  loadChoices: 'mf:load-choices',
 } as const;
 
 export interface AnalyzePayload {
@@ -55,6 +57,13 @@ export interface FormatterApi {
   reveal(path: string): Promise<void>;
   /** Desktop: open in Word. Web: download the generated file. */
   open(path: string): Promise<void>;
+  /**
+   * Write the review-screen choices to a small file the author names.
+   * Desktop: a save dialog. Web: a download. Resolves false when cancelled.
+   */
+  saveChoices(suggestedName: string, json: string): Promise<boolean>;
+  /** Read a choices file the author picks. Null when cancelled. */
+  loadChoices(): Promise<string | null>;
   /** Identifier for a dropped file — an absolute path, or its name on the web. */
   pathForFile(file: File): string;
 }
