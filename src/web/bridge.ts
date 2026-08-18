@@ -87,7 +87,9 @@ function choose(): Promise<string | null> {
     input.style.display = 'none';
     document.body.appendChild(input);
 
-    // `cancel` is not universally supported, so also settle on window focus.
+    // A dialog closed without a choice fires `cancel` in current browsers.
+    // Where it does not, the promise simply stays pending; the next click
+    // opens a fresh chooser and nothing is lost.
     let settled = false;
     const finish = (value: string | null): void => {
       if (settled) return;
@@ -100,11 +102,6 @@ function choose(): Promise<string | null> {
       finish(file ? remember(file) : null);
     });
     input.addEventListener('cancel', () => finish(null));
-    window.addEventListener(
-      'focus',
-      () => window.setTimeout(() => finish(null), 400),
-      { once: true },
-    );
     input.click();
   });
 }
@@ -241,9 +238,6 @@ export const webBridge: FormatterApi = {
         file.text().then(finish, () => finish(null));
       });
       input.addEventListener('cancel', () => finish(null));
-      window.addEventListener('focus', () => window.setTimeout(() => finish(null), 400), {
-        once: true,
-      });
       input.click();
     }),
 

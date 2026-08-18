@@ -70,6 +70,9 @@ const webBundle = {
   format: 'iife',
   target: 'chrome120',
   minify: !watch,
+  // No source map on the hosted page: with `connect-src 'none'` DevTools
+  // cannot fetch it anyway, and the attempt shows up as a blocked request.
+  sourcemap: watch,
 };
 
 /** Content security policy for the hosted page. */

@@ -190,6 +190,7 @@ main {
 }
 
 .dropzone {
+  position: relative;
   border: 1.5px dashed var(--rule-strong);
   border-radius: var(--radius);
   background: var(--card);
@@ -203,8 +204,21 @@ main {
   transition: border-color 0.15s, background 0.15s;
 }
 
+/* On the web a real file input covers the box, so the browser opens the
+   chooser itself. Invisible, but it is what the reader actually clicks. */
+.dropzone-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
+
 .dropzone:hover,
-.dropzone:focus-visible {
+.dropzone:focus-visible,
+.dropzone:has(.dropzone-input:focus-visible) {
   border-color: var(--accent);
   outline: none;
 }

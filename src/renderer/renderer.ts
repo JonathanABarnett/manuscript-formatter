@@ -331,18 +331,43 @@ function startOver(): void {
 function setupPicker(kind: 'reference' | 'manuscript', zone: HTMLElement | null): void {
   if (!zone) return;
 
-  const choose = async (): Promise<void> => {
-    const path = await window.formatter.pickDocx(kind);
-    if (path) void setPath(kind, path);
-  };
-
-  zone.addEventListener('click', () => void choose());
-  zone.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      void choose();
-    }
-  });
+  if (window.formatter.platform === 'web') {
+    // In a browser the surest way to open the file chooser is to let the
+    // reader click a real file input, so one is laid invisibly over the box.
+    // No script has to ask for the dialog, and the browser handles keyboard
+    // access and cancellation itself.
+    const input = el('input', {
+      type: 'file',
+      accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      class: 'dropzone-input',
+    });
+    input.setAttribute(
+      'aria-label',
+      kind === 'reference' ? 'Choose the design file' : 'Choose your manuscript',
+    );
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      // Clear it so choosing the same file again still counts as a change.
+      input.value = '';
+      if (!file) return;
+      const path = window.formatter.pathForFile(file);
+      if (path) void setPath(kind, path);
+    });
+    zone.tabIndex = -1;
+    zone.appendChild(input);
+  } else {
+    const choose = async (): Promise<void> => {
+      const path = await window.formatter.pickDocx(kind);
+      if (path) void setPath(kind, path);
+    };
+    zone.addEventListener('click', () => void choose());
+    zone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        void choose();
+      }
+    });
+  }
 
   for (const type of ['dragenter', 'dragover'] as const) {
     zone.addEventListener(type, (event) => {
@@ -1472,6 +1497,14 @@ export function init(): void {
     $('#reassurance').textContent =
       'Your files stay only in this tab’s memory while it is open. They are never uploaded or stored ' +
       'by the app. The finished Word file is saved only when you choose Download; nothing is sent to KDP.';
+    // A reader on a website reasonably assumes a server is involved. Say
+    // exactly what happens instead, rather than asserting it does not.
+    replace(
+      $('#privacy-note'),
+      el('strong', {}, 'Nothing is uploaded, even though this is a web page.'),
+      ' The page reads your two files right here in your browser, builds the new one here, and hands ' +
+        'it back as a download. No server ever sees your manuscript, and closing the tab leaves nothing behind.',
+    );
   }
 
   setupPicker('reference', document.querySelector('#picker-reference .dropzone'));
