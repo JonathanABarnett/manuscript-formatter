@@ -575,3 +575,64 @@ describe('opening a chapter with small capitals', () => {
     expect(descendants(doc?.documentElement ?? null, 'smallCaps')).toHaveLength(0);
   });
 });
+
+describe('the contents page against a design with a centred front section', () => {
+  it('sits at the top of its own page instead of inheriting the front section’s centring', async () => {
+    const id = counter++;
+    // A KDP-style design: a centred first section for the title page, then the body.
+    const centredFront =
+      '<w:type w:val="nextPage"/><w:pgSz w:w="8640" w:h="12960"/>' +
+      '<w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="360"/>' +
+      '<w:vAlign w:val="center"/>';
+    const reference = await writeDocx(join(dir, `ref${id}.docx`), {
+      ...BOOK_TEMPLATE,
+      paragraphs: [
+        { text: 'The Sample Book', style: 'BookTitle', sectPr: centredFront },
+        ...BOOK_TEMPLATE.paragraphs.slice(1),
+      ],
+    });
+    const manuscript = await writeDocx(join(dir, `ms${id}.docx`), { paragraphs: RAW_MANUSCRIPT });
+    const output = join(dir, `out${id}.docx`);
+    await formatManuscript({
+      referencePath: reference,
+      manuscriptPath: manuscript,
+      outputPath: output,
+      options: { extraSections: { ...NO_EXTRA_SECTIONS, contents: true } },
+    });
+
+    const out = await readOutput(output);
+    const doc = await out.pkg.readXml(out.pkg.documentPath);
+    const body = child(doc?.documentElement ?? null, 'body');
+    const paragraphs = children(body, 'p');
+    const heading = paragraphs.findIndex((p) => textOf(p).trim() === 'Contents');
+    expect(heading).toBeGreaterThan(0);
+    // The manuscript's own opening pages come first and close the centred front section...
+    const frontClose = paragraphs
+      .slice(0, heading)
+      .map((p) => child(child(p, 'pPr'), 'sectPr'))
+      .filter((s): s is Element => s !== null);
+    expect(frontClose.length).toBeGreaterThan(0);
+    expect(attr(child(frontClose[frontClose.length - 1], 'vAlign'), 'val')).toBe('center');
+    // ...and the contents page is its own top-aligned section after them.
+    const contentsSect = paragraphs
+      .slice(heading)
+      .map((p) => child(child(p, 'pPr'), 'sectPr'))
+      .find((s): s is Element => s !== null);
+    expect(contentsSect).toBeDefined();
+    expect(attr(child(contentsSect!, 'vAlign'), 'val')).toBe('top');
+    // The chapters still follow, in the chapter style, after the contents.
+    const chapters = out.paragraphs.filter((p) => p.styleId === 'ChapterTitle' && /^CHAPTER/.test(p.text));
+    expect(chapters).toHaveLength(2);
+    expect(out.paragraphs.findIndex((p) => p.text === 'CHAPTER ONE' && p.styleId === 'ChapterTitle')).toBeGreaterThan(heading);
+  });
+
+  it('recognises an existing contents heading in its common spellings', async () => {
+    const { looksLikeContentsHeading } = await import('../src/core/analyze/manuscript.js');
+    for (const text of ['Contents', 'CONTENTS', 'Table of Contents:', 'Contents Page', 'Índice', 'Table des matières', 'Inhaltsverzeichnis', 'Sumário']) {
+      expect(looksLikeContentsHeading(text), text).toBe(true);
+    }
+    for (const text of ['Contents of the box were missing.', 'Chapter One', 'The Contents']) {
+      expect(looksLikeContentsHeading(text), text).toBe(false);
+    }
+  });
+});

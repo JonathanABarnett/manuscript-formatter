@@ -3,6 +3,7 @@ import { analyzeDocuments, formatToBuffer, suggestOptions } from '../src/core/fo
 import { DocxPackage } from '../src/core/ooxml/package.js';
 import { attr, child, children, descendants, textOf } from '../src/core/ooxml/xml.js';
 import { buildSampleManuscript, buildTemplate } from '../src/core/templates/generate.js';
+import { findLook } from '../src/core/templates/design.js';
 import { EMPTY_BOOK_DETAILS, NO_EXTRA_SECTIONS, type DocxInput, type FormatOptions } from '../src/core/types.js';
 
 /**
@@ -165,9 +166,29 @@ describe('the generated opening pages', () => {
       extraSections: { ...NO_EXTRA_SECTIONS, contents: true },
     });
 
-    expect(rows.some((r) => r.text === 'Contents' && r.style === 'ChapterTitle')).toBe(true);
+    const heading = rows.findIndex((r) => r.text === 'Contents' && r.style === 'ChapterTitle');
+    expect(heading).toBeGreaterThan(0);
     const instructions = descendants(body, 'instrText').map((el) => el.textContent ?? '');
     expect(instructions.some((i) => i.includes('TOC'))).toBe(true);
+
+    // Until Word updates the field, its result is the list of chapters — so
+    // the page reads as a contents page, and no instruction can ever print.
+    const { chapterBlanksAfter: after } = findLook('classic');
+    const entries = rows.slice(heading + after + 1, heading + after + 3);
+    expect(entries.map((r) => r.text)).toEqual(['CHAPTER ONE', 'CHAPTER TWO']);
+    expect(entries.every((r) => r.style === 'BodyText')).toBe(true);
+    expect(rows.some((r) => /right-click/i.test(r.text))).toBe(false);
+    // The field opens in the first entry's paragraph and closes in the last.
+    const paragraphs = children(body, 'p');
+    const kinds = (p: Element) => descendants(p, 'fldChar').map((f) => attr(f, 'fldCharType'));
+    expect(kinds(paragraphs[heading + after + 1])).toEqual(['begin', 'separate']);
+    expect(kinds(paragraphs[heading + after + 2])).toEqual(['end']);
+
+    // The contents page is a section of its own, aligned to the top.
+    const closing = child(child(paragraphs[heading + after + 2], 'pPr'), 'sectPr');
+    expect(closing).not.toBeNull();
+    expect(attr(child(closing, 'vAlign'), 'val')).toBe('top');
+    expect(attr(child(closing, 'type'), 'val')).toBe('nextPage');
 
     // Word only offers to build the table if the document asks it to.
     const rels = await pkg.relsFor(pkg.documentPath);
@@ -183,20 +204,29 @@ describe('the generated opening pages', () => {
       extraSections: { ...NO_EXTRA_SECTIONS, acknowledgments: true, aboutTheAuthor: true },
     });
 
+    const { chapterBlanksBefore: before, chapterBlanksAfter: after } = findLook('classic');
     const ack = rows.findIndex((r) => r.text === 'Acknowledgments');
     const about = rows.findIndex((r) => r.text === 'About the Author');
     expect(ack).toBeGreaterThan(0);
     expect(about).toBeGreaterThan(ack);
-    expect(rows[ack].breaks).toBe(true);
-    expect(rows[about].breaks).toBe(true);
+    // Each heading is sunk down its page like a chapter title, the page break
+    // riding on the first of the blank paragraphs above it.
+    for (const at of [ack, about]) {
+      expect(rows[at].style).toBe('ChapterTitle');
+      expect(rows[at].breaks).toBe(false);
+      const sink = rows.slice(at - before, at);
+      expect(sink.every((r) => r.style === 'ChapterTitle' && r.text === '')).toBe(true);
+      expect(rows[at - before].breaks).toBe(true);
+    }
 
     // Both sit after the last of the manuscript's own chapters.
-    const lastChapter = rows.map((r) => r.style).lastIndexOf('ChapterTitle');
-    expect(lastChapter).toBeGreaterThanOrEqual(about);
+    const lastChapter = rows.findIndex((r) => r.text === 'CHAPTER TWO' && r.style === 'ChapterTitle');
+    expect(lastChapter).toBeGreaterThan(0);
+    expect(ack).toBeGreaterThan(lastChapter);
 
     // A blank line between typed paragraphs becomes two paragraphs, not one.
-    expect(rows[ack + 1].text).toBe('Thanks to the usual suspects.');
-    expect(rows[ack + 2].text).toBe('And to the unusual ones.');
+    expect(rows[ack + after + 1].text).toBe('Thanks to the usual suspects.');
+    expect(rows[ack + after + 2].text).toBe('And to the unusual ones.');
   });
 
   it("keeps the manuscript's own front matter when not replacing it", async () => {

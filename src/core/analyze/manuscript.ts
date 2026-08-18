@@ -83,9 +83,7 @@ export async function analyzeManuscript(input: DocxInput): Promise<LoadedManuscr
     footnoteCount: countFootnoteReferences(body),
     bodyStartIndex: blocks.findIndex((b) => b.role === 'chapterTitle' || b.role === 'partTitle'),
     detectedDetails: detectBookDetails(blocks),
-    hasContentsPage: blocks.some(
-      (b) => !b.isEmpty && /^(table of )?contents$/i.test(b.text.trim()),
-    ),
+    hasContentsPage: blocks.some((b) => !b.isEmpty && looksLikeContentsHeading(b.text)),
     ...habits,
     language: detectLanguage(body, stylesDoc, styles),
     warnings,
@@ -456,6 +454,18 @@ function markCopyrightPages(blocks: ManuscriptBlock[], bodyStart: number): void 
       b.reasons = [...b.reasons, 'part of the copyright page'];
     }
   }
+}
+
+/**
+ * A heading over a contents list, in English or the other languages the
+ * classifier knows, allowing a stray colon or full stop after it.
+ */
+export function looksLikeContentsHeading(text: string): boolean {
+  const t = text.replace(/\s+/g, ' ').trim().replace(/[:.]+$/, '').trim();
+  if (t.length === 0 || t.length > 40) return false;
+  return /^(table of contents|contents( page)?|[íi]ndice( de contenidos?)?|tabla de contenidos?|contenido|table des mati[èe]res|sommaire|inhalt|inhaltsverzeichnis|indice|sum[áa]rio|inhoud|inhoudsopgave)$/i.test(
+    t,
+  );
 }
 
 /** Roles whose runs are restyled wholesale, so their underlining never prints. */

@@ -46,8 +46,11 @@ Optional details — title, subtitle, author, copyright year, publisher, ISBN, a
 dedication, epigraph, acknowledgments, an About the Author note, a bibliography — are used to build
 those pages in the chosen design, in the order a printed book sets them. A section you leave blank
 is skipped rather than producing a headed empty page, and the form says so before you format. A
-table of contents is added as a real Word field, so Word fills in the chapter names and page numbers
-when the file opens.
+table of contents is added as a real Word field on a page of its own, sunk like a chapter opening:
+Word offers to fill in the page numbers when the file opens, and until it does the field already
+lists the chapter titles, so nothing but the book's own words can ever print there. It is offered
+by default when the manuscript has chapters and no contents heading of its own (in English or the
+other languages the app reads), and is a single tick to turn off.
 
 ### Before you download
 

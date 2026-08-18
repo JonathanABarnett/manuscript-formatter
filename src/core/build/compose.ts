@@ -158,12 +158,24 @@ export async function composeDocument(
     wordCount: 0,
   };
 
+  // The chapter titles as the contents page will list them until Word fills
+  // the table in for real: as written, or as the numbering options rewrite them.
+  const contentsEntries = manuscript.analysis.blocks
+    .filter((b) => {
+      const role = effectiveRole(b, options);
+      return (role === 'chapterTitle' || role === 'partTitle') && b.text.trim().length > 0;
+    })
+    .map((b) => chapterTitles.get(b.index) ?? b.text.replace(/\s+/g, ' ').trim());
+
   // Generated opening pages come first, before anything from the manuscript.
   const matterContext = {
     doc: outDoc,
     roles: roleStyles,
     details: options.bookDetails,
     sections: options.extraSections,
+    chapterBlanksBefore,
+    chapterBlanksAfter,
+    contentsEntries,
   };
   const frontTemplateSectPr = frontSectPrClone ?? bodySectPrClone;
   const generatedFront = buildFrontMatter(matterContext);
@@ -259,21 +271,37 @@ export async function composeDocument(
     const leavingFrontMatter = inFrontMatter && !FRONT_MATTER_ROLES.has(role);
     if (leavingFrontMatter) inFrontMatter = false;
 
+    let sectionBreakApplied = false;
+
     // A contents list is the last thing in the front matter, so it goes in
     // once the manuscript's own opening pages are behind us — never ahead of
-    // the author's title page.
+    // the author's title page. It gets a section of its own, aligned to the
+    // top of the page: a design that centres its title page or sets its
+    // copyright notice at the foot must not drag the contents down with it.
     if (leavingFrontMatter && contentsPage) {
       applyVAlign(lastParagraph, lastFrontRole ?? 'frontMatter');
+      if (frontSectionPending && lastParagraph && frontSectPrClone) {
+        attachSectPr(lastParagraph, frontSectPrClone, outDoc);
+        frontSectionPending = false;
+      }
       for (const p of contentsPage.paragraphs) outBody.appendChild(p);
       stats.paragraphsWritten += contentsPage.paragraphs.length;
       lastParagraph = contentsPage.paragraphs.at(-1) ?? lastParagraph;
       anyContentEmitted = true;
+      const template = frontSectPrClone ?? bodySectPrClone;
+      if (template && lastParagraph) {
+        const sectPr = template.cloneNode(true) as Element;
+        setSectionType(sectPr, 'nextPage', outDoc);
+        setVerticalAlignment(sectPr, 'top', outDoc);
+        stripPageNumberRestart(sectPr);
+        attachSectPr(lastParagraph, sectPr, outDoc);
+        sectionBreakApplied = true;
+      }
       contentsPage = null;
     }
 
     // Close the front-matter section on the last paragraph that belongs to it,
     // so the reference's own front/body section split is reproduced.
-    let sectionBreakApplied = false;
     if (leavingFrontMatter && frontSectionPending && lastParagraph && frontSectPrClone) {
       attachSectPr(lastParagraph, frontSectPrClone, outDoc);
       frontSectionPending = false;

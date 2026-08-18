@@ -1447,7 +1447,13 @@ function renderResult(result: FormatResult): void {
         el('li', {}, 'Page numbers run in order and any blank pages are intentional.'),
         el('li', {}, 'The correct book title and author appear in headers, footers, and opening pages.'),
         el('li', {}, 'Pictures and tables fit inside the page margins.'),
-        el('li', {}, 'The copyright page and table of contents, if used, are up to date.'),
+        state.options.extraSections.contents
+          ? el(
+              'li',
+              {},
+              'When Word asks whether to update the fields, answer Yes: that fills in the page numbers on the contents page. (Right-click the list and choose Update Field if it did not ask.)',
+            )
+          : el('li', {}, 'The copyright page and any table of contents are up to date.'),
       ),
     ),
     result.warnings.length > 0

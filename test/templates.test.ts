@@ -123,14 +123,14 @@ describe('the sample manuscript', () => {
       const rels = await pkg.relsFor(pkg.documentPath);
       expect(rels.all().some((r) => r.type.endsWith('/footer'))).toBe(true);
 
-      // Chapter titles land on the design's own chapter style.
-      const titles = children(body, 'p').filter((p) =>
+      // Chapter titles land on the design's own chapter style; the contents
+      // page lists them once more, in the body style, as the field's result.
+      const titled = children(body, 'p').filter((p) =>
         ['CHAPTER ONE', 'CHAPTER TWO'].includes(textOf(p).trim()),
       );
-      expect(titles).toHaveLength(2);
-      for (const t of titles) {
-        expect(attr(child(child(t, 'pPr'), 'pStyle'), 'val')).toBe('ChapterTitle');
-      }
+      const styleOf = (p: Element) => attr(child(child(p, 'pPr'), 'pStyle'), 'val');
+      expect(titled.filter((p) => styleOf(p) === 'ChapterTitle')).toHaveLength(2);
+      expect(titled.filter((p) => styleOf(p) === 'BodyText')).toHaveLength(2);
 
       // No style id may dangle: Word would silently fall back to Normal.
       const styles = await pkg.readXml('word/styles.xml');

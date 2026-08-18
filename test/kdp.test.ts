@@ -221,7 +221,7 @@ describe('a real KDP interior template', () => {
       text: textOf(p).trim(),
     }));
 
-    const twoAt = rows.findIndex((r) => r.text === 'Chapter Two');
+    const twoAt = rows.findIndex((r) => r.text === 'Chapter Two' && r.style === 'ChapTitle');
     expect(rows.slice(twoAt - 2, twoAt).every((r) => r.style === 'ChapTitle' && r.text === '')).toBe(
       true,
     );
@@ -247,7 +247,7 @@ describe('a real KDP interior template', () => {
       breaks: child(child(p, 'pPr'), 'pageBreakBefore') !== null,
     }));
 
-    const titleAt = rows.findIndex((r) => r.text === 'Chapter One');
+    const titleAt = rows.findIndex((r) => r.text === 'Chapter One' && r.style === 'ChapTitle');
     expect(titleAt).toBeGreaterThan(0);
     expect(rows[titleAt].style).toBe('ChapTitle');
 
@@ -259,7 +259,7 @@ describe('a real KDP interior template', () => {
     // Chapter two has no section break ahead of it, so exactly one page break
     // sits on the first blank of its sink — never on the title itself, which
     // would strand the blanks at the foot of the previous page.
-    const twoAt = rows.findIndex((r) => r.text === 'Chapter Two');
+    const twoAt = rows.findIndex((r) => r.text === 'Chapter Two' && r.style === 'ChapTitle');
     const sinkTwo = rows.slice(twoAt - 5, twoAt);
     expect(sinkTwo.every((r) => r.style === 'ChapTitle' && r.text === '')).toBe(true);
     expect(sinkTwo.filter((r) => r.breaks)).toHaveLength(1);

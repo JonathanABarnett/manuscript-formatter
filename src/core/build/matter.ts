@@ -18,6 +18,20 @@ export interface MatterContext {
   roles: RoleStyleMap;
   details: BookDetails;
   sections: ExtraSections;
+  /**
+   * Blank paragraphs the design sets around a chapter title to sink it down
+   * the page. Headings over generated pages (Contents, Acknowledgments) take
+   * the same sink, so they land where a chapter opening does.
+   */
+  chapterBlanksBefore: number;
+  chapterBlanksAfter: number;
+  /**
+   * The chapter titles as they will be written, for the contents table's
+   * ready-made result. Word replaces it with real entries and page numbers
+   * when the fields are updated; until then, and if that never happens, the
+   * page still shows the book's chapters rather than an instruction.
+   */
+  contentsEntries: string[];
 }
 
 /** Whether a section will actually produce anything, given what was typed. */
@@ -96,45 +110,74 @@ function lines(text: string): string[] {
 /**
  * A Word table-of-contents field. Word fills in the entries and page numbers
  * when the document's fields are updated, which the composer asks it to do on
- * open — a static list would go stale the moment anything reflowed.
+ * open — a static list would go stale the moment anything reflowed. The
+ * field's ready-made result is the list of chapter titles, one paragraph
+ * each, so the page reads as a contents page even before Word touches it.
  */
-function contentsField(ctx: MatterContext): Element {
-  const p = ctx.doc.createElementNS(NS.w, 'w:p');
-  const pPr = wEl(ctx.doc, 'pPr');
-  const styleId = styleForRole('body', ctx.roles);
-  if (styleId) pPr.appendChild(wEl(ctx.doc, 'pStyle', { val: styleId }));
-  pPr.appendChild(wEl(ctx.doc, 'ind', { firstLine: 0 }));
-  p.appendChild(pPr);
+function contentsField(ctx: MatterContext): Element[] {
+  const entries =
+    ctx.contentsEntries.length > 0
+      ? ctx.contentsEntries
+      : ['The chapter list appears here when Word updates the document’s fields.'];
 
-  const run = (build: (r: Element) => void): void => {
+  const paragraph = (): Element => {
+    const p = ctx.doc.createElementNS(NS.w, 'w:p');
+    const pPr = wEl(ctx.doc, 'pPr');
+    const styleId = styleForRole('body', ctx.roles);
+    if (styleId) pPr.appendChild(wEl(ctx.doc, 'pStyle', { val: styleId }));
+    pPr.appendChild(wEl(ctx.doc, 'ind', { firstLine: 0 }));
+    p.appendChild(pPr);
+    return p;
+  };
+  const run = (p: Element, build: (r: Element) => void): void => {
     const r = ctx.doc.createElementNS(NS.w, 'w:r');
     build(r);
     p.appendChild(r);
   };
+  const text = (p: Element, value: string): void =>
+    run(p, (r) => {
+      const t = ctx.doc.createElementNS(NS.w, 'w:t');
+      t.setAttributeNS(NS.xml, 'xml:space', 'preserve');
+      t.appendChild(ctx.doc.createTextNode(value));
+      r.appendChild(t);
+    });
 
-  run((r) => r.appendChild(wEl(ctx.doc, 'fldChar', { fldCharType: 'begin' })));
-  run((r) => {
+  // A field may span paragraphs: it opens in the first, closes in the last.
+  const out = entries.map(() => paragraph());
+  const first = out[0];
+  run(first, (r) => r.appendChild(wEl(ctx.doc, 'fldChar', { fldCharType: 'begin' })));
+  run(first, (r) => {
     const instr = ctx.doc.createElementNS(NS.w, 'w:instrText');
     instr.setAttributeNS(NS.xml, 'xml:space', 'preserve');
     // Chapter titles sit at outline level 1, so only those are listed.
     instr.appendChild(ctx.doc.createTextNode(' TOC \\o "1-1" \\h \\z \\u '));
     r.appendChild(instr);
   });
-  run((r) => r.appendChild(wEl(ctx.doc, 'fldChar', { fldCharType: 'separate' })));
-  run((r) => {
-    const t = ctx.doc.createElementNS(NS.w, 'w:t');
-    t.appendChild(
-      ctx.doc.createTextNode('Right-click here in Word and choose “Update Field” to fill this in.'),
-    );
-    r.appendChild(t);
-  });
-  run((r) => r.appendChild(wEl(ctx.doc, 'fldChar', { fldCharType: 'end' })));
-  return p;
+  run(first, (r) => r.appendChild(wEl(ctx.doc, 'fldChar', { fldCharType: 'separate' })));
+  entries.forEach((entry, i) => text(out[i], entry));
+  run(out[out.length - 1], (r) => r.appendChild(wEl(ctx.doc, 'fldChar', { fldCharType: 'end' })));
+  return out;
+}
+
+/**
+ * A heading in the chapter-title style, sunk down the page exactly as the
+ * design sinks a chapter title, so a Contents or Acknowledgments page opens
+ * where a chapter does. The page break rides on the first blank paragraph
+ * when there is one, on the heading itself when there is not.
+ */
+function chapterHeading(ctx: MatterContext, text: string): Element[] {
+  const out: Element[] = [];
+  for (let i = 0; i < ctx.chapterBlanksBefore; i++) {
+    out.push(para(ctx, 'chapterTitle', '', { breakBefore: i === 0 }));
+  }
+  out.push(para(ctx, 'chapterTitle', text, { breakBefore: out.length === 0 }));
+  for (let i = 0; i < ctx.chapterBlanksAfter; i++) out.push(para(ctx, 'chapterTitle', ''));
+  return out;
 }
 
 /** A headed section: its title, then the author's own words beneath. */
 function headedSection(ctx: MatterContext, heading: string, body: string): Element[] {
-  const out: Element[] = [para(ctx, 'chapterTitle', heading, { breakBefore: true })];
+  const out: Element[] = chapterHeading(ctx, heading);
   for (const line of lines(body)) out.push(para(ctx, 'frontMatter', line));
   return out;
 }
@@ -249,10 +292,7 @@ export function buildContentsPage(ctx: MatterContext): MatterPage | null {
   if (!ctx.sections.contents) return null;
   return {
     role: 'frontMatter',
-    paragraphs: [
-      para(ctx, 'chapterTitle', 'Contents', { breakBefore: true }),
-      contentsField(ctx),
-    ],
+    paragraphs: [...chapterHeading(ctx, 'Contents'), ...contentsField(ctx)],
   };
 }
 
