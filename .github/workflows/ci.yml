@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Type check, tests and web build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # The web bundle must stay free of Node built-ins: it runs in the page.
+      - run: npm run build:web
+      - name: Check the web bundle imports nothing from node
+        shell: bash
+        run: |
+          if grep -Eq 'from *"node:|require\("node:' dist/web/app.js; then
+            echo "dist/web/app.js imports a node: module" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: web
+          path: dist/web
